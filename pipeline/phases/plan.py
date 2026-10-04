@@ -47,7 +47,9 @@ def _run_pxx(target_repo=None):
         '{"tasks": [{"id": "TASK-1", "criterion": "<one acceptance criterion, '
         'VERBATIM>", "deps": [], "scope": ["<file this task may touch>"]}, ...]}.\n'
         "Rules: EXACTLY ONE task per acceptance criterion, criterion quoted "
-        "verbatim; tasks come ONLY from the criteria — anything else "
+        "verbatim — BYTE-FOR-BYTE as it appears in the intake, including "
+        "the 'AC-n:' prefix (a dropped or altered prefix is a contract "
+        "violation); tasks come ONLY from the criteria — anything else "
         "(suite verification, test-log recording, meta-work) is the "
         "pipeline's job, never a task; every task gets a scope of the "
         "file(s) it may modify; deps only on earlier TASK-n ids, acyclic; "
