@@ -223,10 +223,15 @@ confirmed).
 
 ## Open / parked register (must stay visible — not closed findings)
 
-- **REVIEW phase**: NEXT owner decision — mocked until Chris explicitly
-  authorizes a second real-phase drill (same requirements as the CODE
-  drill: governed endpoint, operator forward, fail-closed fallback,
-  explicit scope, sandbox, bounded execution, diff capture, ledger evidence).
+- **REVIEW phase**: drill PASSED in scope (CODE+REVIEW, 2026-10-03) — no
+  general readiness claim. OPEN DEFECT for next drill: author==reviewer
+  model (vacuous-gate risk, sdlc invariant author!=reviewer); next REVIEW
+  drill must use a distinct model+stack (candidate: Asrock qwen2.5:14b
+  via Ollama). True different-vendor review unavailable on HOME fleet
+  (all Qwen-family; Nemotron parked).
+- **Next probe**: larger-scope CODE drill (multi-task plans, per-task diff
+  isolation). INTAKE/PLAN/TEST/VERIFY/VALIDATE stay mocked until each has
+  its own preflight + Chris-authorized drill.
 - **49,152 service**: probationary; steady-state watch required.
 - **C5** NUC11 warm standby: gated on the functional state machine (mock
   lifecycle proven 2026-10-03; standby build itself not started).
