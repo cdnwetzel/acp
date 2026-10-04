@@ -35,7 +35,7 @@ Case record (stdlib-validated against `contracts/eval_case.schema.json`):
   "execution": {"requires_model": true,
                 "layer": "worker|harness"},
   "expected": {"outcome": "pass|fail|limitation|human_escalation",
-               "catching_layer": "schema|gate|ast|scope|runtime|envelope|human|null",
+               "catching_layer": "schema|gate|ast|scope|runtime|envelope|none|human",
                "detail": "what exactly must happen"},
   "scoring_tiers": ["deterministic"],
   "provenance": {"source_run_or_fixture": "lifecycle run 4",
@@ -50,17 +50,28 @@ complies, artifact valid), **fail** (a named deterministic/runtime layer
 must catch it), **limitation** (correct behavior is a recorded limitation,
 e.g. unsupported dynamic import → fail-closed with a stated reason), or
 **human_escalation** (correct behavior is stopping for Chris, e.g. ambiguous
-contract). Outcome-mapping rules (design review F-003, accepted 2026-10-04):
-a worker refusal maps to **fail** or **human_escalation** by the case
-contract, never a fifth outcome; a classified pxx ClarityGateStop maps to
-**limitation** with `catching_layer: gate` unless the case explicitly expects
-human escalation.
+contract). Outcome-mapping rules (design review F-003, owner-refined mapping
+recorded 2026-10-04): refusal is a model BEHAVIOR, not a fifth outcome — a
+correct refusal that satisfies the case is **pass**; a refusal caused by the
+intended deterministic contract is **fail** with the named catching layer; an
+unsupported condition correctly reported is **limitation**; genuine ambiguity
+requiring Chris is **human_escalation**. For prompt-injection cases the case
+author must decide which of these the desired result is. A classified pxx
+ClarityGateStop maps to `outcome: limitation, catching_layer: gate, detail:
+"pxx clarity gate stopped the request before execution"` — never pass (the
+requested work did not complete), never automatically fail (the stop may be
+correct behavior for an unsupported or ambiguous request).
 
-`catching_layer` attribution rules (design review F-002, accepted
-2026-10-04), encoded in the schema: **required** for `fail`; **required and
-explicitly named** for `limitation` and `human_escalation`; **null** for
-`pass`. Every outcome has exactly one deterministic schema-valid
-representation.
+`catching_layer` attribution rules (design review F-002, owner-refined
+2026-10-04), encoded in the schema — no null ambiguity, every case has
+exactly one deterministic representation:
+
+- `pass`: catching_layer = `"none"` (a pass must not pretend a gate caught
+  anything)
+- `fail`: catching_layer = required named layer
+- `limitation`: catching_layer = required layer that reported the limitation
+  (a limitation is not a failure, but it still needs attribution)
+- `human_escalation`: catching_layer = `"human"`
 
 `execution.requires_model` (design review, owner choice recorded
 2026-10-04): `net-*` endpoint/fallback/timeout cases stay IN the corpus —
@@ -137,16 +148,23 @@ observed vs baseline).
   fixture; a case and its holdouts share no symbol/module names.
 - `results/` and `baselines/` runtime content is operational state —
   gitignored, like `state.jsonl`. The corpus itself (`corpus.jsonl`, case
-  payloads) is committed so fixture provenance is reviewable (owner choice
-  recorded 2026-10-04: payloads stay in Git — they are reviewable
-  provenance, regression fixtures, and holdout inputs).
-- **Baseline durability (design review F-001, accepted 2026-10-04):** a
-  gitignored baseline is unrecoverable if deleted, which would silently
-  break the replayability claim. Every PROMOTED baseline is therefore
-  preserved durably through: a SHA-256 manifest of its content, its run ID,
-  the ledger head at promotion, the source commit, the model/config
-  identity, and the preserved evidence bundle. Optionally a small committed
-  baseline INDEX (ids + hashes + pointers) — never operational results.
+  payloads) is committed (owner choice recorded 2026-10-04): the corpus is
+  source-level test intent, not operational output — committing it gives
+  reviewable adversarial provenance, stable fixture hashes, visible holdouts
+  and polarity pairs, protection against silently deleting an inconvenient
+  case, clean-checkout reproducibility, and alignment with the
+  failure-to-invariant workflow. Constraint: fixtures must be synthetic,
+  secret-scanned, path-confined, and treated as inert data; production
+  prompt builders must never read the corpus (enforced by the static test).
+- **Baseline durability (design review F-001, owner-resolved 2026-10-04):**
+  "frozen baseline" is stronger than "currently present on disk". The split
+  is definitive:
+  - **Committed** (baseline index): baseline_id, source commit, corpus hash,
+    case-set hash, expected-outcome hash, manifest hash — the index makes
+    the baseline addressable.
+  - **Preserved operational evidence** (outside Git, same evidence-bundle
+    discipline as lifecycle drills): full results, envelope records,
+    model/config identity, ledger head, deterministic comparison output.
   Acceptance: a fresh checkout plus the preserved baseline bundle reproduces
   the baseline identity and the deterministic diff.
 - Promptfoo lane, if used: runs in a disposable repo against a *copy* of the
@@ -201,9 +219,9 @@ Review verdict: PASS WITH NOTES (no implementation or promotion implied).
 
 | Finding | Severity | Disposition |
 |---|---|---|
-| F-001 baseline durability | P1 | ACCEPTED — promoted baselines preserved via SHA-256 manifest + run ID + ledger head + source commit + model/config identity + preserved evidence bundle; optional committed baseline index (section 4). Acceptance: fresh checkout + preserved bundle reproduces baseline identity and deterministic diff. |
-| F-002 catching_layer nullability | P2 | ACCEPTED — required for fail, required and named for limitation/human_escalation, null for pass; encoded in the schema (section 1). |
-| F-003 outcome mapping | P2 | ACCEPTED — refusal maps to fail or human_escalation by case contract; ClarityGateStop = limitation with catching_layer: gate unless the case expects escalation (section 1). No fifth outcome. |
+| F-001 baseline durability | P1 | ACCEPTED (owner-resolved): definitive split — committed baseline INDEX (baseline_id, source commit, corpus hash, case-set hash, expected-outcome hash, manifest hash) makes the baseline addressable; preserved operational bundle (full results, envelope records, model/config identity, ledger head, deterministic comparison output) supplies the details (section 4). Acceptance: fresh checkout + preserved bundle reproduces baseline identity and deterministic diff. |
+| F-002 catching_layer semantics | P2 | ACCEPTED (owner-refined): no nulls — pass="none", fail=required named layer, limitation=required reporting layer, human_escalation="human"; encoded in the schema (section 1). |
+| F-003 outcome mapping | P2 | ACCEPTED (owner-refined): refusal is behavior, not an outcome — correct refusal satisfying the case = pass; refusal via intended deterministic contract = fail (named layer); unsupported condition correctly reported = limitation; ambiguity = human_escalation. ClarityGateStop = limitation/gate with fixed detail text (section 1). No fifth outcome. |
 
 Owner choices recorded: corpus payloads stay committed; `net-*` cases stay in
 the corpus with explicit `execution.requires_model`/`layer` fields. The
