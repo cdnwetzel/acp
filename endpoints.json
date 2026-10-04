@@ -1,37 +1,37 @@
 {
-  "comment": "ACP endpoint manifest — the ONE resolver for phase->endpoint routing (plan section 9: one config resolver, never the environment). Endpoint selection is CONFIG; worker behavior stays behind contracts. Mock runners do not consult this file; only real workers do.",
+  "comment": "ACP endpoint manifest \u2014 the ONE resolver for phase->endpoint routing (plan section 9: one config resolver, never the environment). Endpoint selection is CONFIG; worker behavior stays behind contracts. Mock runners do not consult this file; only real workers do.",
   "phases": {
     "intake": {
       "worker": "governed-27b",
-      "endpoint": "http://127.0.0.1:8004/v1",
+      "endpoint": "http://127.0.0.1:8004",
       "access": "ssh-local-forward",
       "forward": "ssh -N -L 8004:127.0.0.1:8004 chris@10.0.1.125",
       "model": "qwen3.8-27b",
-      "note": "D4: ACP -> labrouter :8004 (loopback on T5810) -> vllm :8007. Never raw LAN :8007."
+      "note": "D4: ACP -> labrouter :8004 (loopback on T5810) -> vllm :8007. Never raw LAN :8007. (base URL WITHOUT /v1 \u2014 pxx appends /v1/chat/completions itself; doubled /v1/v1 404s)"
     },
     "plan": {
       "worker": "governed-27b",
-      "endpoint": "http://127.0.0.1:8004/v1",
+      "endpoint": "http://127.0.0.1:8004",
       "access": "ssh-local-forward",
       "forward": "ssh -N -L 8004:127.0.0.1:8004 chris@10.0.1.125",
       "model": "qwen3.8-27b",
-      "note": "D4: governed path only."
+      "note": "D4: governed path only. (base URL WITHOUT /v1 \u2014 pxx appends /v1/chat/completions itself; doubled /v1/v1 404s)"
     },
     "code": {
       "worker": "governed-27b",
-      "endpoint": "http://127.0.0.1:8004/v1",
+      "endpoint": "http://127.0.0.1:8004",
       "access": "ssh-local-forward",
       "forward": "ssh -N -L 8004:127.0.0.1:8004 chris@10.0.1.125",
       "model": "qwen3.8-27b",
-      "note": "D4: governed path only. First real-worker candidate (pxx)."
+      "note": "D4: governed path only. First real-worker candidate (pxx). (base URL WITHOUT /v1 \u2014 pxx appends /v1/chat/completions itself; doubled /v1/v1 404s)"
     },
     "review": {
       "worker": "governed-27b",
-      "endpoint": "http://127.0.0.1:8004/v1",
+      "endpoint": "http://127.0.0.1:8004",
       "access": "ssh-local-forward",
       "forward": "ssh -N -L 8004:127.0.0.1:8004 chris@10.0.1.125",
       "model": "qwen3.8-27b",
-      "note": "D4: governed path only."
+      "note": "D4: governed path only. (base URL WITHOUT /v1 \u2014 pxx appends /v1/chat/completions itself; doubled /v1/v1 404s)"
     },
     "test": {
       "worker": "local",

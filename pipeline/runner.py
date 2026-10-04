@@ -32,7 +32,11 @@ def _gate_approved(rows, phase):
     return any(r["event"] == "human_approve"
                for r in rows[opens[-1] + 1:] if r["phase"] == phase)
 
-def run_all():
+def run_all(workers=None):
+    """workers: optional {phase: kwargs} override — e.g.
+    {"code": {"worker": "pxx", "target_repo": "/path"}} runs that phase's
+    real worker; every other phase stays on its mock worker."""
+    workers = workers or {}
     integrity = state.verify_chain()
     if not integrity["ok"]:
         raise state.ChainError(
@@ -45,7 +49,7 @@ def run_all():
             continue
         state.emit(phase, "started")
         mod = importlib.import_module(f"pipeline.phases.{phase}")
-        artifact = mod.run(mock=True)
+        artifact = mod.run(**workers[phase]) if phase in workers else mod.run(mock=True)
         try:
             GATE[phase]()
         except gates.GateError as e:

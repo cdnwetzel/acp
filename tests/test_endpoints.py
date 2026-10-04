@@ -4,7 +4,7 @@ from pipeline import endpoints, runner
 def test_governed_phases_route_via_8004_proxy():
     for phase in ("intake", "plan", "code", "review"):
         e = endpoints.resolve(phase)
-        assert e["endpoint"] == "http://127.0.0.1:8004/v1"
+        assert e["endpoint"] == "http://127.0.0.1:8004"
         assert e["access"] == "ssh-local-forward"
         assert "8004:127.0.0.1:8004" in e["forward"]
 
