@@ -73,7 +73,7 @@ def gate_review(r="artifacts/review.md", m="artifacts/diff/manifest.json"):
         if f"## {d['task']}" not in txt:
             raise GateError(f"review missing section for {d['task']}")
     for line in txt.splitlines():
-        s = line.strip()
+        s = line.strip().replace("*", "")  # tolerate model markdown emphasis (**WAIVED**)
         if s.startswith("- issue:") and "RESOLVED" not in s and "WAIVED:" not in s:
             raise GateError(f"unresolved review issue: {s}")
     return True
@@ -104,6 +104,13 @@ def gate_verify(v="artifacts/verification.md", intake="artifacts/intake.json"):
             raise GateError(f"criterion traced to FAIL: {ac[:60]}")
         if not any("PASS" in r for r in rows):
             raise GateError(f"criterion has no PASS verdict: {ac[:60]}")
+    # Contract (owner, 2026-10-03): evidence must state its own limits —
+    # a required, non-empty "## Limitations" block, never free-form-optional.
+    if "## Limitations" not in txt:
+        raise GateError("verification.md lacks a '## Limitations' section")
+    limitations = txt.split("## Limitations", 1)[1]
+    if len(limitations.strip()) < 20:
+        raise GateError("## Limitations section is empty or perfunctory")
     return True
 
 def gate_validate(v="artifacts/validation.md"):

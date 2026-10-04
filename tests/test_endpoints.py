@@ -33,3 +33,13 @@ def test_every_runner_phase_has_an_endpoint_entry():
 def test_mock_runner_does_not_consult_manifest(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)  # no endpoints.json in cwd; runner must not care
     assert runner.run_all() == "gate_open:intake"
+
+def test_independent_reviewer_profile():
+    e = endpoints.reviewer("asrock-independent")
+    assert e["endpoint"] == "http://10.0.1.115:11434"
+    assert e["provider"] == "ollama"
+    assert e["model"] != endpoints.resolve("code")["model"]  # author != reviewer
+
+def test_unknown_reviewer_fails_loudly():
+    with pytest.raises(endpoints.EndpointError):
+        endpoints.reviewer("nobody")

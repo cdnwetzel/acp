@@ -5,7 +5,7 @@
       "worker": "governed-27b",
       "endpoint": "http://127.0.0.1:8004",
       "access": "ssh-local-forward",
-      "forward": "ssh -N -L 8004:127.0.0.1:8004 chris@10.0.1.125",
+      "forward": "ssh -N -L 8004:127.0.0.1:8004 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes chris@10.0.1.125",
       "model": "qwen3.8-27b",
       "note": "D4: ACP -> labrouter :8004 (loopback on T5810) -> vllm :8007. Never raw LAN :8007. (base URL WITHOUT /v1 \u2014 pxx appends /v1/chat/completions itself; doubled /v1/v1 404s)"
     },
@@ -13,7 +13,7 @@
       "worker": "governed-27b",
       "endpoint": "http://127.0.0.1:8004",
       "access": "ssh-local-forward",
-      "forward": "ssh -N -L 8004:127.0.0.1:8004 chris@10.0.1.125",
+      "forward": "ssh -N -L 8004:127.0.0.1:8004 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes chris@10.0.1.125",
       "model": "qwen3.8-27b",
       "note": "D4: governed path only. (base URL WITHOUT /v1 \u2014 pxx appends /v1/chat/completions itself; doubled /v1/v1 404s)"
     },
@@ -21,7 +21,7 @@
       "worker": "governed-27b",
       "endpoint": "http://127.0.0.1:8004",
       "access": "ssh-local-forward",
-      "forward": "ssh -N -L 8004:127.0.0.1:8004 chris@10.0.1.125",
+      "forward": "ssh -N -L 8004:127.0.0.1:8004 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes chris@10.0.1.125",
       "model": "qwen3.8-27b",
       "note": "D4: governed path only. First real-worker candidate (pxx). (base URL WITHOUT /v1 \u2014 pxx appends /v1/chat/completions itself; doubled /v1/v1 404s)"
     },
@@ -29,7 +29,7 @@
       "worker": "governed-27b",
       "endpoint": "http://127.0.0.1:8004",
       "access": "ssh-local-forward",
-      "forward": "ssh -N -L 8004:127.0.0.1:8004 chris@10.0.1.125",
+      "forward": "ssh -N -L 8004:127.0.0.1:8004 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes chris@10.0.1.125",
       "model": "qwen3.8-27b",
       "note": "D4: governed path only. (base URL WITHOUT /v1 \u2014 pxx appends /v1/chat/completions itself; doubled /v1/v1 404s)"
     },
@@ -60,6 +60,25 @@
       "access": "lan",
       "model": "qwen3:4b",
       "note": "D1: escalation/second-opinion only, never a scheduled phase. Client should pass think=false."
+    }
+  },
+  "reviewers": {
+    "governed-27b": {
+      "worker": "governed-27b",
+      "endpoint": "http://127.0.0.1:8004",
+      "access": "ssh-local-forward",
+      "forward": "ssh -N -L 8004:127.0.0.1:8004 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes chris@10.0.1.125",
+      "provider": "vllm",
+      "model": "qwen3.8-27b",
+      "note": "Same model as CODE \u2014 vacuous-gate risk; drill-only legacy."
+    },
+    "asrock-independent": {
+      "worker": "ollama-asrock",
+      "endpoint": "http://10.0.1.115:11434",
+      "access": "lan",
+      "provider": "ollama",
+      "model": "qwen2.5:14b-instruct-q4_k_m",
+      "note": "Independent reviewer: different model, host, AND serving stack (Ollama vs vLLM) \u2014 closes the author!=reviewer defect (sdlc invariant 1)."
     }
   }
 }

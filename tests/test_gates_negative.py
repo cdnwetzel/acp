@@ -89,3 +89,27 @@ def test_runner_fails_closed_on_tampered_ledger(tmp_path, monkeypatch):
             f.write(json.dumps(r) + "\n")
     with pytest.raises(state.ChainError):
         runner.run_all()
+
+def test_gate_verify_rejects_missing_limitations(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    intake_phase.run(mock=True)
+    acs = json.load(open("artifacts/intake.json"))["acceptance_criteria"]
+    rows = [f"| {ac} | somewhere | PASS |" for ac in acs]
+    open("artifacts/verification.md", "w").write("# verification.md\n\n" + "\n".join(rows) + "\n")
+    with pytest.raises(gates.GateError, match="Limitations"):
+        gates.gate_verify()
+
+def test_review_preflight_rejects_self_review(tmp_path, monkeypatch):
+    from pipeline.phases import review
+    from pipeline.worker import WorkerError
+    monkeypatch.chdir(tmp_path)
+    ep = {"model": "qwen3.8-27b", "endpoint": "http://127.0.0.1:8004", "provider": "vllm"}
+    with pytest.raises(WorkerError, match="NOT independent"):
+        review._assert_independence(ep, "selfish")
+
+def test_review_preflight_accepts_independent_reviewer(tmp_path, monkeypatch):
+    from pipeline.phases import review
+    monkeypatch.chdir(tmp_path)
+    ep = {"model": "qwen2.5:14b-instruct-q4_k_m", "endpoint": "http://10.0.1.115:11434",
+          "provider": "ollama"}
+    review._assert_independence(ep, "asrock-independent")  # must not raise

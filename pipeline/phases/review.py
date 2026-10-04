@@ -7,15 +7,15 @@ pipeline state and the phase writes nothing but artifacts/review.md.
 Output contract is gate-enforced: one ## TASK-n section per diff, every
 issue RESOLVED or WAIVED-with-reason.
 """
-import json, os, subprocess
+import json, os, re, subprocess
 from pipeline.worker import (ISOLATION_TOML, WorkerError, check_access,
                              pxx_bin, pxx_env)
 
 PHASE = "review"
 
-def run(mock=False, worker=None, target_repo=None):
+def run(mock=False, worker=None, target_repo=None, reviewer=None):
     if worker == "pxx":
-        return _run_pxx(target_repo)
+        return _run_pxx(target_repo, reviewer)
     if not mock:
         raise NotImplementedError("worker not wired for phase " + PHASE)
     manifest = json.load(open("artifacts/diff/manifest.json"))
@@ -28,9 +28,29 @@ def run(mock=False, worker=None, target_repo=None):
         f.write("\n".join(lines))
     return "artifacts/review.md"
 
-def _run_pxx(target_repo):
+def _assert_independence(ep, reviewer_name):
+    """Preflight: reviewer must differ from the CODE worker on model AND
+    endpoint AND runtime/provider — else the review is a governed
+    self-review, not independent evidence (owner requirement 2026-10-03)."""
     from pipeline import endpoints
-    ep = endpoints.resolve(PHASE)
+    author = endpoints.resolve("code")
+    same = [k for k in ("model", "endpoint", "provider")
+            if author.get(k) and author.get(k) == ep.get(k)]
+    if same:
+        raise WorkerError(
+            f"reviewer '{reviewer_name}' is NOT independent of the CODE worker "
+            f"(shared: {', '.join(same)}) — refusing to run a self-review. "
+            f"Residual accepted risk even when distinct: all fleet models are "
+            f"Qwen-family, so vendor independence is incomplete by construction.")
+
+def _run_pxx(target_repo, reviewer=None):
+    from pipeline import endpoints
+    if reviewer:
+        ep = endpoints.reviewer(reviewer)
+    else:
+        ep = endpoints.resolve(PHASE)
+        ep.setdefault("provider", "vllm")
+    _assert_independence(ep, reviewer or "phases.review (governed default)")
     check_access(ep)
     manifest = json.load(open("artifacts/diff/manifest.json"))
     acs = json.load(open("artifacts/intake.json"))["acceptance_criteria"]
@@ -65,7 +85,7 @@ def _run_pxx(target_repo):
                 "--- BEGIN DIFF ---\n" + patch + "\n--- END DIFF ---")
             argv = [pxx_bin(), "ask", "-m", prompt,
                     "--model", ep["model"], "--base-url", ep["endpoint"],
-                    "--provider", "vllm",
+                    "--provider", ep.get("provider", "vllm"),
                     "--budget-rounds", "6", "--budget-seconds", "600",
                     "--no-memory", "--sandbox"]
             r = subprocess.run(argv, capture_output=True, text=True,
@@ -79,8 +99,16 @@ def _run_pxx(target_repo):
                     f"pxx review failed for {d['task']} (rc={r.returncode}) — "
                     f"see artifacts/diff/{d['task']}.review.transcript.log\n"
                     f"stdout tail: {r.stdout[-1000:]}\nstderr tail: {r.stderr[-1000:]}")
-            findings = [l for l in r.stdout.splitlines()
-                        if l.strip().startswith("- issue:")]
+            findings = []
+            for line in r.stdout.splitlines():
+                s = line.strip()
+                for prefix in ("[COMPLETED]", "[OUTCOME]", "[DONE]"):
+                    if s.startswith(prefix):
+                        s = s[len(prefix):].strip()
+                s = s.lstrip("(*•-· ")  # model formatting varies: parens, bullets, stray dashes
+                if s.startswith("issue:"):
+                    s = re.sub(r"\s*\(rounds=\d+.*\)$", "", s)  # pxx status trailer
+                    findings.append("- " + s)
             if not findings:
                 raise WorkerError(
                     f"{d['task']}: review produced no finding lines in the "

@@ -33,3 +33,10 @@ def escalation(name="second_opinion", path=MANIFEST):
     if entry is None:
         raise EndpointError(f"no escalation endpoint configured: {name}")
     return entry
+
+def reviewer(name="asrock-independent", path=MANIFEST):
+    doc = load(path)
+    entry = doc.get("reviewers", {}).get(name)
+    if entry is None:
+        raise EndpointError(f"no reviewer endpoint configured: {name}")
+    return entry

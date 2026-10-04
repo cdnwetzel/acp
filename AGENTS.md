@@ -221,6 +221,21 @@ confirmed).
 - ~~**brothers-keeper**~~ **STRUCK 2026-10-03** — not deployed on the Jetson;
   the actual watchdog is `gateB_loop.py` + psoperator (probe-verified, inv. 2.12).
 
+## Accepted risks (ADR)
+
+- **ADR-001 (2026-10-03) — Harness shares the agent's trust domain.** The
+  orchestrator runs on the same host, user, and filesystem as the worker
+  invocations. Worker sandboxing (pxx) limits the *worker's* blast radius,
+  but a compromised worker could in principle reach for the harness itself.
+  Accepted for N=1 ONLY; never present this as strong isolation. Revisit if
+  the fleet graduates past drill scope (options: harness on a separate
+  account/host, e.g. NUC11 with the executor sandboxed elsewhere).
+- **ADR-002 (2026-10-03) — Reviewer independence is partial.** CODE and
+  REVIEW now run on distinct models, machines, and serving stacks (preflight
+  asserted in review.py), but every fleet model is Qwen-family, so
+  vendor/model-family independence is incomplete by construction. Residual
+  risk: shared family blind spots. Documented, not solved.
+
 ## Open / parked register (must stay visible — not closed findings)
 
 - **REVIEW phase**: drill PASSED in scope (CODE+REVIEW, 2026-10-03) — no

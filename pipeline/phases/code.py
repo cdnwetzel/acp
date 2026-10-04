@@ -25,7 +25,7 @@ def run(mock=False, worker=None, target_repo=None):
             f.write(f"# mock diff for {t['id']}\n# criterion: {t['criterion']}\n"
                     f"--- a/mock/{t['id']}.txt\n+++ b/mock/{t['id']}.txt\n"
                     f"@@ -0,0 +1 @@\n+mock implementation for {t['id']}\n")
-        diffs.append({"task": t["id"], "path": path,
+        diffs.append({"task": t["id"], "path": path, "criterion": t["criterion"],
                       "scope": t.get("scope", [f"mock/{t['id']}.txt"])})
     with open("artifacts/diff/manifest.json", "w") as f:
         json.dump({"diffs": diffs}, f, indent=2)
@@ -40,11 +40,15 @@ def _run_pxx(target_repo):
     plan = json.load(open("artifacts/plan.json"))
     os.makedirs("artifacts/diff", exist_ok=True)
     iso_path = os.path.join(target_repo, "pxx.toml")
-    with open(iso_path, "w") as f:
-        f.write(ISOLATION_TOML)
     diffs = []
     try:
         for task in plan["tasks"]:
+            # pxx STASHES repo-local config after reading it (run id suffix
+            # "+stash"): the isolation file is consumed and removed by each
+            # invocation. Rewrite it fresh before EVERY task, or task N+1
+            # runs un-isolated and the fallback chain comes back.
+            with open(iso_path, "w") as f:
+                f.write(ISOLATION_TOML)
             scope = task.get("scope", [])
             prompt = (f"You are the CODE worker for exactly one pipeline task. "
                       f"Input contract — this task only:\n"
@@ -92,6 +96,7 @@ def _run_pxx(target_repo):
             with open(path, "w") as f:
                 f.write(diff)
             diffs.append({"task": task["id"], "path": path,
+                          "criterion": task["criterion"],
                           "scope": scope or changed})
     finally:
         if os.path.exists(iso_path):
