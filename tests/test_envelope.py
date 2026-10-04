@@ -28,6 +28,18 @@ def test_emit_worker_call_hashes_bodies_never_stores_them(tmp_path, monkeypatch)
     assert rec["run_id"] and rec["ledger_head"]
 
 
+def test_command_line_prompt_is_redacted_to_its_hash(tmp_path, monkeypatch):
+    """Run-12 audit catch: argv carries `-m <prompt>` — the body must never
+    reach the envelope via the command field."""
+    monkeypatch.chdir(tmp_path)
+    prompt = "THE PROMPT BODY"
+    envelope.emit_worker_call(**_call(command=f"pxx ask -m {prompt} --model m",
+                                      prompt=prompt))
+    rec = json.loads(open(envelope.ENVELOPE).read())
+    assert "THE PROMPT BODY" not in rec["command"]
+    assert rec["prompt_sha256"][:16] in rec["command"]
+
+
 def test_append_rejects_record_missing_required_fields(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     rec = {"record_type": "worker_call", "run_id": "x" * 12,

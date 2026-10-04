@@ -138,7 +138,12 @@ def emit_worker_call(*, phase, planned, invoked, command, exit_status,
     if endpoint is not None:
         rec["endpoint"] = endpoint
     if prompt is not None:
-        rec["prompt_sha256"] = _sha(prompt)
+        # The command line carries `-m <prompt>` — the prompt is a body and
+        # must NOT land in the envelope (run-12 audit caught exactly this).
+        # Redact it to its hash everywhere it appears in the command.
+        ph = _sha(prompt)
+        rec["prompt_sha256"] = ph
+        rec["command"] = command.replace(prompt, f"<prompt_sha256:{ph[:16]}…>")
     if inputs is not None:
         rec["input_sha256"] = _sha(inputs)
     if output is not None:
