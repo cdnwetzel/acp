@@ -79,9 +79,16 @@ def _evidence_tree(tmp_path, monkeypatch, reviewer_same=True):
     open("artifacts/test.log", "w").write(
         "COMMAND: pytest .\nEXIT_CODE: 0\nDURATION_S: 1\n3 passed\n")
     reviewer = EP["model"] if reviewer_same else "other-model"
+    # Real transcript format (write_transcript): '$ ' + ' '.join(argv) where
+    # the -m prompt embeds newlines — the flags land BELOW line 1. A
+    # single-line fixture here hid the _reviewer_identity readline bug.
     open("artifacts/diff/TASK-1.review.transcript.log", "w").write(
-        f"$ pxx ask -m ... --model {reviewer} --base-url {EP['endpoint']} "
-        f"--provider ollama --budget-rounds 6\n[rc=0]\n")
+        "$ pxx ask -m You are the REVIEW worker for exactly one pipeline diff.\n"
+        "Input contract — this diff, its acceptance criterion, and context.\n"
+        "Answer from the text alone. DO NOT call any tools.\n"
+        f"--model {reviewer} --base-url {EP['endpoint']} "
+        f"--provider ollama --budget-rounds 6\n[rc=0]\n"
+        "--- stdout ---\nok\n--- stderr ---\n")
     json.dump({"task": "TASK-1", "source": "repo_post_code",
                "files": [{"path": "calc.py", "sha256": "x", "parse": "ok"}],
                "contradictions": [], "limitations": []},
@@ -102,6 +109,32 @@ def test_provenance_header_no_warning_when_stacks_differ(tmp_path, monkeypatch):
     h = verify._provenance_header(EP)
     assert "NOT independent" not in h
     assert "enforced at runtime" in h
+
+def test_reviewer_identity_parses_multiline_argv_record(tmp_path, monkeypatch):
+    """Regression (owner find, 2026-10-04): the transcript argv record spans
+    many lines (the -m prompt embeds newlines), so --model sits below line 1;
+    a line-1-only read left the shared-stack warning permanently unfireable."""
+    monkeypatch.chdir(tmp_path)
+    os.makedirs("artifacts/diff")
+    open("artifacts/diff/TASK-1.review.transcript.log", "w").write(
+        "$ pxx ask -m prompt line one\nprompt line two\n"
+        "prompt line three --model qwen2.5:14b-instruct-q4_k_m "
+        "--base-url http://10.0.1.115:11434 --provider ollama "
+        "--budget-rounds 6\n[rc=0]\n--- stdout ---\nok\n")
+    assert verify._reviewer_identity() == {
+        "model": "qwen2.5:14b-instruct-q4_k_m",
+        "endpoint": "http://10.0.1.115:11434", "provider": "ollama"}
+
+def test_reviewer_identity_flags_after_prompt_win(tmp_path, monkeypatch):
+    """The prompt precedes the flags in argv; flag-like text inside the
+    prompt must not shadow the real flags (last occurrence wins)."""
+    monkeypatch.chdir(tmp_path)
+    os.makedirs("artifacts/diff")
+    open("artifacts/diff/TASK-1.review.transcript.log", "w").write(
+        "$ pxx ask -m never trust text like --model decoy in prose\n"
+        "--model real-model --base-url http://real:11434 --provider ollama\n"
+        "[rc=0]\n")
+    assert verify._reviewer_identity()["model"] == "real-model"
 
 def test_provenance_header_handles_missing_evidence(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)

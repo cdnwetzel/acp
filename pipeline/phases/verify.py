@@ -146,15 +146,20 @@ def _run_pxx(target_repo):
 
 def _reviewer_identity():
     """Reviewer model/endpoint/provider, parsed from the review transcript's
-    recorded argv — deterministic, never model text. None if unavailable."""
+    recorded argv — deterministic, never model text. None if unavailable.
+    The argv record is MULTI-LINE: write_transcript joins argv and the -m
+    prompt embeds newlines, so flags sit far below line 1 (owner find,
+    2026-10-04: readline() made the shared-stack warning unfireable). Parse
+    everything up to the [rc=] marker; flags follow the prompt in argv, so
+    the last occurrence of each flag is the real one."""
     import glob
     logs = sorted(glob.glob("artifacts/diff/*.review.transcript.log"))
     if not logs:
         return None
-    argv = open(logs[0]).readline()
+    argv = open(logs[0]).read().split("\n[rc=", 1)[0]
     def flag(name):
-        m = re.search(rf"{name} (\S+)", argv)
-        return m.group(1) if m else None
+        m = re.findall(rf"{name} (\S+)", argv)
+        return m[-1] if m else None
     model, base, provider = flag("--model"), flag("--base-url"), flag("--provider")
     return {"model": model, "endpoint": base, "provider": provider} if model else None
 
