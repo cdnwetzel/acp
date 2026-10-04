@@ -32,10 +32,12 @@ def _gate_approved(rows, phase):
     return any(r["event"] == "human_approve"
                for r in rows[opens[-1] + 1:] if r["phase"] == phase)
 
-def run_all(workers=None):
+def run_all(workers=None, stop_after=None):
     """workers: optional {phase: kwargs} override — e.g.
     {"code": {"worker": "pxx", "target_repo": "/path"}} runs that phase's
-    real worker; every other phase stays on its mock worker."""
+    real worker; every other phase stays on its mock worker.
+    stop_after: optional phase name — halt after that phase completes
+    (drill harness feature: lets a driver inject between phases and resume)."""
     workers = workers or {}
     integrity = state.verify_chain()
     if not integrity["ok"]:
@@ -57,6 +59,8 @@ def run_all(workers=None):
             raise
         state.emit(phase, "complete", artifact=artifact)
         rows = state.rows()
+        if stop_after and phase == stop_after:
+            return f"stopped_after:{phase}"
         if phase in HUMAN_GATES:
             state.emit(phase, "gate_open")
             return f"gate_open:{phase}"
