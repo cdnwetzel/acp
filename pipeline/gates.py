@@ -82,10 +82,15 @@ def gate_test(log="artifacts/test.log"):
     txt = open(log).read() if os.path.exists(log) else ""
     if not txt.strip():
         raise GateError("empty test log")
+    for field in ("COMMAND:", "EXIT_CODE:", "DURATION_S:"):
+        if field not in txt:
+            raise GateError(f"test.log lacks required field {field}")
     if "skipped" in txt.lower() and "SKIP-REASON:" not in txt:
         raise GateError("silent test skip detected")
     if "EXIT_CODE: 0" not in txt:
         raise GateError("test.log lacks a recorded zero exit code")
+    if re.search(r"errors? during collection|Interrupted:", txt):
+        raise GateError("test collection failed")
     if re.search(r"\d+ (failed|error)", txt):
         raise GateError("test.log contains failures or errors")
     if not re.search(r"\d+ passed", txt):

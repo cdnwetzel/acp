@@ -1,19 +1,39 @@
-"""Phase: TEST. Mock worker only — real workers are NOT wired (guardrail #5).
+"""Phase: TEST. Mock by default; real target-repo suite on opt-in.
 
-The mock test target is the repo's deterministic ledger suite — real
-subprocess evidence, no simulated log. Recursion-safe: never the full suite.
+Mock (no target_repo): runs the repo's deterministic ledger suite as
+stand-in evidence. Real (worker="real" + target_repo): executes the target
+repository's own pytest suite — the artifact's correctness evidence, not a
+proxy. Both write the same test.log contract: COMMAND, EXIT_CODE,
+DURATION_S, then full stdout/stderr. Phases produce; the GATE decides.
 """
-import os, subprocess, sys
+import os, subprocess, sys, time
 
 PHASE = "test"
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-def run(mock=False):
-    if not mock:
-        raise NotImplementedError("worker not wired for phase " + PHASE)
-    r = subprocess.run([sys.executable, "-m", "pytest", "tests/test_state.py", "-q"],
-                       capture_output=True, text=True, cwd=REPO_ROOT)
+def _write_log(command, rc, duration, out, err):
     os.makedirs("artifacts", exist_ok=True)
     with open("artifacts/test.log", "w") as f:
-        f.write(f"EXIT_CODE: {r.returncode}\n" + r.stdout + r.stderr)
+        f.write(f"COMMAND: {command}\nEXIT_CODE: {rc}\nDURATION_S: {duration:.1f}\n"
+                f"--- stdout ---\n{out}\n--- stderr ---\n{err}")
     return "artifacts/test.log"
+
+def run(mock=False, worker=None, target_repo=None):
+    if worker == "real":
+        return _run_target(target_repo)
+    if not mock:
+        raise NotImplementedError("worker not wired for phase " + PHASE)
+    cmd = [sys.executable, "-m", "pytest", "tests/test_state.py", "-q"]
+    t0 = time.monotonic()
+    r = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO_ROOT)
+    return _write_log(" ".join(cmd) + f" (cwd={REPO_ROOT})",
+                      r.returncode, time.monotonic() - t0, r.stdout, r.stderr)
+
+def _run_target(target_repo):
+    if not target_repo or not os.path.isdir(target_repo):
+        raise ValueError(f"TEST real worker needs a valid target_repo, got: {target_repo!r}")
+    cmd = [sys.executable, "-m", "pytest", ".", "-q"]
+    t0 = time.monotonic()
+    r = subprocess.run(cmd, capture_output=True, text=True, cwd=target_repo)
+    return _write_log(" ".join(cmd) + f" (cwd={target_repo})",
+                      r.returncode, time.monotonic() - t0, r.stdout, r.stderr)

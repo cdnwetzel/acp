@@ -51,15 +51,26 @@ def test_gate_review_rejects_unresolved_issue(tmp_path, monkeypatch):
 def test_gate_test_rejects_failed_suite(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     os.makedirs("artifacts")
-    open("artifacts/test.log", "w").write("EXIT_CODE: 1\n1 passed, 1 failed in 0.05s\n")
+    open("artifacts/test.log", "w").write(
+        "COMMAND: pytest .\nEXIT_CODE: 1\nDURATION_S: 0.1\n1 passed, 1 failed in 0.05s\n")
     with pytest.raises(gates.GateError):
         gates.gate_test()
 
 def test_gate_test_rejects_nonzero_exit(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     os.makedirs("artifacts")
-    open("artifacts/test.log", "w").write("EXIT_CODE: 2\n3 passed in 0.05s\n")
-    with pytest.raises(gates.GateError, match="exit code"):
+    open("artifacts/test.log", "w").write(
+        "COMMAND: pytest .\nEXIT_CODE: 2\nDURATION_S: 0.1\n3 passed in 0.05s\n")
+    with pytest.raises(gates.GateError, match="zero exit code"):
+        gates.gate_test()
+
+def test_gate_test_rejects_collection_failure(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    os.makedirs("artifacts")
+    open("artifacts/test.log", "w").write(
+        "COMMAND: pytest .\nEXIT_CODE: 0\nDURATION_S: 0.1\n"
+        "ERROR test_calc.py\n!!!! Interrupted: 1 error during collection !!!!\n")
+    with pytest.raises(gates.GateError, match="collection"):
         gates.gate_test()
 
 def test_gate_verify_rejects_fail_verdict_per_criterion(tmp_path, monkeypatch):
