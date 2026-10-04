@@ -33,6 +33,10 @@ def _gate_approved(rows, phase):
                for r in rows[opens[-1] + 1:] if r["phase"] == phase)
 
 def run_all():
+    integrity = state.verify_chain()
+    if not integrity["ok"]:
+        raise state.ChainError(
+            "refusing to run on a tampered ledger: " + "; ".join(integrity["errors"]))
     rows = state.rows()
     for phase in ORDER:
         if _phase_complete(rows, phase):

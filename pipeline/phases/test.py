@@ -15,5 +15,5 @@ def run(mock=False):
                        capture_output=True, text=True, cwd=REPO_ROOT)
     os.makedirs("artifacts", exist_ok=True)
     with open("artifacts/test.log", "w") as f:
-        f.write(r.stdout + r.stderr)
+        f.write(f"EXIT_CODE: {r.returncode}\n" + r.stdout + r.stderr)
     return "artifacts/test.log"

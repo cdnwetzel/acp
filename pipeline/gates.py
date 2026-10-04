@@ -1,5 +1,5 @@
 """Gates are pure functions: artifact in -> verdict out. No side effects."""
-import json, os
+import json, os, re
 from pipeline.validate import validate as _validate, load as _load, ValidationError
 
 CONTRACTS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "contracts")
@@ -84,7 +84,11 @@ def gate_test(log="artifacts/test.log"):
         raise GateError("empty test log")
     if "skipped" in txt.lower() and "SKIP-REASON:" not in txt:
         raise GateError("silent test skip detected")
-    if " passed" not in txt:
+    if "EXIT_CODE: 0" not in txt:
+        raise GateError("test.log lacks a recorded zero exit code")
+    if re.search(r"\d+ (failed|error)", txt):
+        raise GateError("test.log contains failures or errors")
+    if not re.search(r"\d+ passed", txt):
         raise GateError("no passing-test summary in test.log")
     return True
 
@@ -93,10 +97,13 @@ def gate_verify(v="artifacts/verification.md", intake="artifacts/intake.json"):
     if not txt.strip():
         raise GateError("missing/empty verification.md")
     for ac in _read(intake)["acceptance_criteria"]:
-        if ac not in txt:
+        rows = [l for l in txt.splitlines() if ac in l]
+        if not rows:
             raise GateError(f"untraced acceptance criterion: {ac[:60]}")
-    if "PASS" not in txt:
-        raise GateError("traceability matrix has no PASS")
+        if any("FAIL" in r for r in rows):
+            raise GateError(f"criterion traced to FAIL: {ac[:60]}")
+        if not any("PASS" in r for r in rows):
+            raise GateError(f"criterion has no PASS verdict: {ac[:60]}")
     return True
 
 def gate_validate(v="artifacts/validation.md"):

@@ -74,7 +74,7 @@ python3 -m pipeline.approvals <gate> approve|deny "reason"
 # gates: intake | plan | validate
 ```
 
-**Current test status (2026-10-03): 25 passed, 0 failed.** The two former red tests
+**Current test status (2026-10-03): 35 passed, 0 failed.** The two former red tests
 (wrong module path `pipeline.approve`, missing `import os`) were fixed in the test
 files only. C6 landed the same day: state.py is hash-chained with per-row stored
 hashes (tail-tamper detectable), flock-serialized emit, flush+fsync durability;
