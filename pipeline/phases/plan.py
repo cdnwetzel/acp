@@ -31,7 +31,9 @@ def run(mock=False, worker=None, scope_map=None, target_repo=None):
                       "scope": scope_map.get(tid, [f"mock/{tid}.txt"])})
         prev = tid
     with open("artifacts/plan.json", "w") as f:
-        json.dump({"tasks": tasks}, f, indent=2)
+        json.dump({"tasks": tasks,
+                   "required_imports": intake.get("required_imports", [])},
+                  f, indent=2)
     return "artifacts/plan.json"
 
 def _run_pxx(target_repo=None):
@@ -58,6 +60,11 @@ def _run_pxx(target_repo=None):
     stdout = run_ask(ep, prompt, "artifacts/plan.transcript.log",
                      cwd=target_repo)
     doc = extract_one_json(stdout)
+    # required_imports propagate MECHANICALLY from the intake (owner-directed
+    # structured contract, 2026-10-04): the model authors the task list, the
+    # orchestrator stamps the machine contract BEFORE validation so it cannot
+    # drift in transit and the model never owns it.
+    doc["required_imports"] = intake.get("required_imports", [])
     schema = validate.load(os.path.join("contracts", "plan.schema.json"))
     try:
         validate.validate(schema, doc)

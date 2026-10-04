@@ -49,6 +49,7 @@ def run(mock=False, worker=None, problem=None, target_repo=None):
             "AC-2: the run pauses at intake, plan, and validate human gates",
             "AC-3: resume works from any interruption via the ledger",
         ],
+        "required_imports": [],
         "criteria_structured": _STRUCTURED_REHEARSAL,
     }
     with open("artifacts/intake.json", "w") as f:
@@ -66,6 +67,18 @@ _CONVENTION = (
     "can be satisfied letter-correct but behaviorally fake is a FAILED "
     "criterion.")
 
+_MACHINE_CONTRACT = (
+    'The "required_imports" array is the MACHINE contract behind the prose: '
+    'one {"symbol": <name>, "from": <module>} entry for every subject the '
+    'tests must import and exercise from its owning module (e.g. '
+    '{"symbol": "divide", "from": "ops"} when ops.py owns divide). The '
+    "pipeline verifies these entries against the actual test-file AST — "
+    "static, unaliased imports only; a local copy, shadow, redefinition, "
+    "aliased, or dynamic import FAILS the run. The prose criteria remain "
+    "human-readable context; required_imports is what the machine enforces. "
+    "If no criterion requires exercising an owned implementation, emit an "
+    "empty array — never omit the key.")
+
 def _run_pxx(problem, target_repo=None):
     from pipeline import endpoints, validate
     if not problem:
@@ -80,8 +93,9 @@ def _run_pxx(problem, target_repo=None):
         "reads. Tool use terminates the task.\n"
         "Output EXACTLY ONE JSON object (no prose, no markdown fences) with "
         'keys "problem" (string), "constraints" (array of strings), '
-        '"acceptance_criteria" (array of strings, each "AC-n: ...").\n'
-        + _CONVENTION + "\n"
+        '"acceptance_criteria" (array of strings, each "AC-n: ..."), and '
+        '"required_imports" (array, see below).\n'
+        + _CONVENTION + "\n" + _MACHINE_CONTRACT + "\n"
         "--- OPERATOR BRIEF ---\n" + brief + "\n--- END BRIEF ---")
     stdout = run_ask(ep, prompt, "artifacts/intake.transcript.log",
                      cwd=target_repo)

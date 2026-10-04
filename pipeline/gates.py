@@ -36,9 +36,15 @@ def gate_plan(a="artifacts/plan.json", intake="artifacts/intake.json"):
     ids = [t["id"] for t in tasks]
     if len(set(ids)) != len(ids):
         raise GateError("duplicate task ids")
-    acs = _read(intake)["acceptance_criteria"]
+    intake_doc = _read(intake)
+    acs = intake_doc["acceptance_criteria"]
     if sorted(t["criterion"] for t in tasks) != sorted(acs):
         raise GateError("tasks do not decompose acceptance criteria 1:1")
+    # The structured machine contract must propagate byte-identically — a
+    # drifted required_imports means the machine contract was altered in
+    # transit (owner-directed, 2026-10-04).
+    if doc["required_imports"] != intake_doc.get("required_imports", []):
+        raise GateError("plan required_imports do not match the intake (propagation drift)")
     deps = {t["id"]: set(t["deps"]) for t in tasks}
     for tid, ds in deps.items():
         unknown = ds - set(ids)
@@ -78,7 +84,7 @@ def gate_review(r="artifacts/review.md", m="artifacts/diff/manifest.json"):
             raise GateError(f"unresolved review issue: {s}")
     return True
 
-def gate_test(log="artifacts/test.log"):
+def gate_test(log="artifacts/test.log", intake="artifacts/intake.json"):
     txt = open(log).read() if os.path.exists(log) else ""
     if not txt.strip():
         raise GateError("empty test log")
@@ -95,6 +101,19 @@ def gate_test(log="artifacts/test.log"):
         raise GateError("test.log contains failures or errors")
     if not re.search(r"\d+ passed", txt):
         raise GateError("no passing-test summary in test.log")
+    # Structured machine contract (owner-directed, 2026-10-04): when the
+    # intake declares required_imports, the AST evidence must exist and every
+    # check must pass. Absent evidence is a failure, never a silent skip.
+    reqs = _read(intake).get("required_imports", []) if os.path.exists(intake) else []
+    if reqs:
+        if not os.path.exists("artifacts/imports.json"):
+            raise GateError("intake declares required_imports but artifacts/imports.json "
+                            "is missing — AST verification never ran (fail closed)")
+        evidence = _read("artifacts/imports.json")
+        if not evidence.get("ok"):
+            failed = [f"{c['symbol']} from {c['from']}: {c['detail']}"
+                      for c in evidence.get("checks", []) if c.get("result") != "pass"]
+            raise GateError("required-import AST verification failed: " + "; ".join(failed))
     return True
 
 def gate_verify(v="artifacts/verification.md", intake="artifacts/intake.json"):

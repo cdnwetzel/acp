@@ -6,7 +6,7 @@ repository's own pytest suite — the artifact's correctness evidence, not a
 proxy. Both write the same test.log contract: COMMAND, EXIT_CODE,
 DURATION_S, then full stdout/stderr. Phases produce; the GATE decides.
 """
-import os, subprocess, sys, time
+import json, os, subprocess, sys, time
 
 PHASE = "test"
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -35,5 +35,24 @@ def _run_target(target_repo):
     cmd = [sys.executable, "-m", "pytest", ".", "-q"]
     t0 = time.monotonic()
     r = subprocess.run(cmd, capture_output=True, text=True, cwd=target_repo)
-    return _write_log(" ".join(cmd) + f" (cwd={target_repo})",
-                      r.returncode, time.monotonic() - t0, r.stdout, r.stderr)
+    log = _write_log(" ".join(cmd) + f" (cwd={target_repo})",
+                     r.returncode, time.monotonic() - t0, r.stdout, r.stderr)
+    _verify_required_imports(target_repo)
+    return log
+
+def _verify_required_imports(target_repo):
+    """AST-verify the intake's required_imports against the target repo
+    (owner-directed structured contract, 2026-10-04 — the machine layer the
+    prose criteria are only context for). Produces artifacts/imports.json as
+    evidence whenever the intake declares requirements; gate_test decides.
+    Phases produce; nothing here silently passes or silently skips."""
+    from pipeline import required_imports as ri
+    intake_path = "artifacts/intake.json"
+    if not os.path.exists(intake_path):
+        return
+    reqs = json.load(open(intake_path)).get("required_imports", [])
+    if not reqs:
+        return
+    evidence = ri.verify(target_repo, reqs)
+    with open("artifacts/imports.json", "w") as f:
+        json.dump(evidence, f, indent=2)

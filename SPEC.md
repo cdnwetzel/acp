@@ -8,11 +8,12 @@
 5. Distinguish config (intake) vs behavior (plan/code/test) vs consequence (verify/validate).
 
 ## Artifact contracts
-- `artifacts/intake.json` — problem, constraints, acceptance criteria (`contracts/intake.schema.json`)
-- `artifacts/plan.json` — tasks decompose acceptance criteria 1:1; deps acyclic (`contracts/plan.schema.json`)
+- `artifacts/intake.json` — problem, constraints, acceptance criteria, `required_imports` machine contract (`contracts/intake.schema.json`)
+- `artifacts/plan.json` — tasks decompose acceptance criteria 1:1; deps acyclic; `required_imports` propagated byte-identical from intake (`contracts/plan.schema.json`)
 - `artifacts/diff/manifest.json` — one diff per plan task, with scope (`contracts/diff_manifest.schema.json`)
 - `artifacts/review.md` — one `## TASK-n` section per diff; every issue RESOLVED or WAIVED-with-reason
 - `artifacts/test.log` — full test output; no silent skips; passing summary required
+- `artifacts/imports.json` — required-import AST evidence: owner defines, static unaliased import, no shadow (required whenever intake declares `required_imports`)
 - `artifacts/verification.md` — traceability matrix: every acceptance criterion -> passing evidence
 - `artifacts/validation.md` — SIGN-OFF block; the decision itself is a human ledger event, never file content
 
@@ -65,6 +66,12 @@ Distilled invariants (the intake/defect arcs — the lesson is never
    ad-hoc or unrecorded checks.
 4. One task owns each file, unless same-file sequencing is explicitly
    designed and drilled.
+5. Import/ownership requirements are a STRUCTURED machine contract
+   (`required_imports` in intake, propagated mechanically to plan, verified
+   against the real AST at TEST); prose criteria are human-readable context,
+   never the machine contract. Lexical/prose validation of such
+   requirements was retired after four phrasing-dependent borderlines
+   (lifecycle runs 5–9, 2026-10-04).
 
 Anti-overfitting rules:
 

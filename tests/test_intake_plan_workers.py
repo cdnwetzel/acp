@@ -27,7 +27,8 @@ def _patched(monkeypatch, mod, stdout):
 INTAKE_DOC = json.dumps({
     "problem": "Upgrade the calc package.",
     "constraints": ["one task per file"],
-    "acceptance_criteria": ["AC-1: add(2, 2) returns 4 — test.log shows test_add passing (calc.py)"]})
+    "acceptance_criteria": ["AC-1: add(2, 2) returns 4 — test.log shows test_add passing (calc.py)"],
+    "required_imports": []})
 
 def test_intake_writes_only_validated_output(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
