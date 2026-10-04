@@ -49,3 +49,28 @@ def test_resume_skips_completed_phases(tmp_path, monkeypatch):
     assert runner.run_all() == "gate_open:plan"
     # intake ran exactly once — resume did not re-emit its events
     assert _events("intake").count("started") == 1
+
+def test_review_gate_failure_stops_run_without_retry_or_damage(tmp_path, monkeypatch):
+    """Rollback boundary: a REVIEW gate failure must stop the run loudly,
+    leave the completed CODE baseline untouched, and never silently retry."""
+    monkeypatch.chdir(tmp_path)
+    assert runner.run_all() == "gate_open:intake"
+    _approve("intake")
+    assert runner.run_all() == "gate_open:plan"
+    _approve("plan")
+    # sabotage the review artifact before the runner reaches its gate:
+    # force an unresolved issue past the mock worker by corrupting after write
+    import pipeline.phases.review as review_mod
+    real_run = review_mod.run
+    def sabotaged(**kw):
+        path = real_run(**kw)
+        open(path, "a").write("\n- issue: planted unresolved finding\n")
+        return path
+    monkeypatch.setattr(review_mod, "run", sabotaged)
+    with pytest.raises(gates.GateError, match="unresolved"):
+        runner.run_all()
+    ev = _events("review")
+    assert ev == ["started", "gate_failed"]              # stop, no complete, no retry
+    assert _events("code") == ["started", "complete"]    # baseline intact
+    assert not any(e == "started" for e in _events("test"))   # never reached
+    assert not any(e == "started" for e in _events("verify"))
