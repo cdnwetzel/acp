@@ -159,54 +159,75 @@ def run_ask(ep, prompt, transcript_path, budget_rounds="4", budget_seconds="600"
     gate probes referenced files relative to it). The transcript path stays
     relative to the CALLING process (the pipeline sandbox).
     Emits exactly one mandatory envelope record per invocation (every exit
-    path — a failed call is evidence too)."""
+    path — a failed call is evidence too).
+    Failure classes are distinguished and recorded (ADV-018, 2026-10-04):
+    spawn failure (OSError, message preserved), timeout (budget + 60s slack,
+    partial output preserved, transcript rc=None), signal termination
+    (negative returncode, named signal), nonzero exit (classified)."""
     import subprocess, time
     from pipeline import envelope
     iso_path = os.path.join(cwd or ".", "pxx.toml")
-    argv = [pxx_bin(), "ask", "-m", prompt,
+    timeout = int(budget_seconds) + 60
+    budgets = {"rounds": budget_rounds, "seconds": budget_seconds}
+
+    def _record(argv_text, rc, out, duration, failure_class):
+        envelope.emit_worker_call(
+            phase=phase or "code", task_id=task_id, planned="pxx:ask",
+            invoked="pxx:ask", command=argv_text, exit_status=rc,
+            duration_s=duration, budgets=budgets,
+            model=ep["model"], provider=ep.get("provider"),
+            endpoint=ep["endpoint"], prompt=prompt, output=out or None,
+            artifacts=({transcript_path: transcript_path}
+                       if transcript_path and os.path.exists(transcript_path) else {}),
+            runtime=envelope.pxx_version(), iso_config=ISOLATION_TOML,
+            limitations=[failure_class] if failure_class else [])
+
+    t0 = time.monotonic()
+    try:
+        binary = pxx_bin()
+    except WorkerError as e:
+        _record("pxx (binary unresolved)", -1, "", time.monotonic() - t0,
+                f"spawn failure: {e}")
+        raise
+    argv = [binary, "ask", "-m", prompt,
             "--model", ep["model"], "--base-url", ep["endpoint"],
             "--provider", ep.get("provider", "vllm"),
             "--budget-rounds", budget_rounds, "--budget-seconds", budget_seconds,
             "--no-memory", "--sandbox"]
-    t0 = time.monotonic()
+    r, failure_class = None, None
     try:
         with open(iso_path, "w") as f:  # pxx stashes repo-local config per invocation:
             f.write(ISOLATION_TOML)     # rewrite before EVERY ask
         try:
-            r = subprocess.run(argv, capture_output=True, text=True, env=pxx_env(),
-                               cwd=cwd or ".")
-            rc, out, err = r.returncode, r.stdout, r.stderr
-        except OSError:
-            rc, out, err = -1, "", "spawn failed"
-            r = None
+            r = subprocess.run(argv, capture_output=True, text=True,
+                               env=pxx_env(), cwd=cwd or ".", timeout=timeout)
+        except subprocess.TimeoutExpired as e:
+            out = e.stdout.decode() if isinstance(e.stdout, bytes) else (e.stdout or "")
+            err = e.stderr.decode() if isinstance(e.stderr, bytes) else (e.stderr or "")
+            r = subprocess.CompletedProcess(argv, None, out, err)  # rc=None: honest
+            failure_class = (f"timeout after {timeout}s (budget {budget_seconds}s "
+                             f"+ slack) — process killed, partial output preserved")
+        except OSError as e:
+            failure_class = f"spawn failure: {e}"
     finally:
         if os.path.exists(iso_path):
             os.remove(iso_path)
     duration = time.monotonic() - t0
-    if rc == -1:  # spawn failure: emit the evidence record, then fail loudly
-        envelope.emit_worker_call(
-            phase=phase or "code", task_id=task_id, planned="pxx:ask",
-            invoked="pxx:ask", command=" ".join(argv), exit_status=rc,
-            duration_s=duration, budgets={"rounds": budget_rounds,
-                                          "seconds": budget_seconds},
-            model=ep["model"], provider=ep.get("provider"),
-            endpoint=ep["endpoint"], prompt=prompt,
-            runtime=envelope.pxx_version(), iso_config=ISOLATION_TOML,
-            limitations=["spawn failure — never executed"])
-        raise WorkerError(f"pxx failed to spawn — see isolation/env; "
-                          f"envelope record emitted")
+    if r is None:  # spawn failure — no process existed, no transcript possible
+        _record(" ".join(argv), -1, "", duration, failure_class)
+        raise WorkerError(f"pxx {failure_class} — envelope record emitted")
     write_transcript(transcript_path, argv, prompt, r)
-    envelope.emit_worker_call(
-        phase=phase or "code", task_id=task_id, planned="pxx:ask",
-        invoked="pxx:ask", command=" ".join(argv), exit_status=rc,
-        duration_s=duration,
-        budgets={"rounds": budget_rounds, "seconds": budget_seconds},
-        model=ep["model"], provider=ep.get("provider"),
-        endpoint=ep["endpoint"], prompt=prompt, output=out,
-        artifacts={transcript_path: transcript_path},
-        runtime=envelope.pxx_version(), iso_config=ISOLATION_TOML,
-        limitations=[] if rc == 0 else [f"nonzero exit rc={rc} — classified, "
-                                        f"no retry"])
+    if r.returncode is None:  # timeout
+        _record(" ".join(argv), -1, r.stdout, duration, failure_class)
+        raise WorkerError(f"pxx {failure_class} — transcript {transcript_path}")
+    if r.returncode < 0:  # signal termination is NOT a spawn failure (ADV-018)
+        _record(" ".join(argv), r.returncode, r.stdout, duration,
+                f"signal termination (signal {-r.returncode}) — classified, no retry")
+        raise WorkerError(f"pxx terminated by signal {-r.returncode} — classified, "
+                          f"no retry (see {transcript_path})")
     if r.returncode != 0:
+        _record(" ".join(argv), r.returncode, r.stdout, duration,
+                f"nonzero exit rc={r.returncode} — classified, no retry")
         raise classify_pxx_failure(prompt, r, transcript_path)
+    _record(" ".join(argv), 0, r.stdout, duration, None)
     return r.stdout

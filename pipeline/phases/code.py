@@ -44,6 +44,59 @@ def _restore_repo(target_repo, offenders):
         subprocess.run(["git", "clean", "-f", "--"] + list(offenders),
                        cwd=target_repo, check=True, capture_output=True)
 
+CODE_STATE = "artifacts/diff/code-state.json"
+
+def _git(repo, *args, check=True):
+    r = subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True)
+    if check and r.returncode != 0:
+        raise WorkerError(f"git {' '.join(args)} failed rc={r.returncode}: "
+                          f"{r.stderr.strip()}")
+    return r
+
+def _write_code_state(st):
+    tmp = CODE_STATE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(st, f, indent=2)
+    os.replace(tmp, CODE_STATE)
+
+def _load_code_state(target_repo):
+    """Idempotent CODE resume (M-5, repair step 3): a per-lifecycle task ledger.
+    A task counts complete only with BOTH its commit (ancestor of HEAD) and its
+    patch on disk; partial commits are never mistaken for completed tasks.
+    Resume across lifecycles, a moved repo, or a dirty tree is refused loudly."""
+    from pipeline import state as _state
+    if not os.path.exists(CODE_STATE):
+        if _git(target_repo, "status", "--porcelain").stdout.strip():
+            raise WorkerError(
+                "CODE requires a clean target tree at start — uncommitted "
+                "changes present; refusing to sweep them into task commits")
+        st = {"base_commit": _git(target_repo, "rev-parse", "HEAD").stdout.strip(),
+              "lifecycle": _state.lifecycle()["id"], "completed": []}
+        _write_code_state(st)
+        return st, set()
+    st = json.load(open(CODE_STATE))
+    lc = _state.lifecycle()["id"]
+    if st.get("lifecycle") != lc:
+        raise WorkerError(
+            f"CODE resume refused: code-state belongs to lifecycle "
+            f"{st.get('lifecycle')}, current is {lc} — no cross-lifecycle reuse")
+    if _git(target_repo, "merge-base", "--is-ancestor", st["base_commit"], "HEAD",
+            check=False).returncode != 0:
+        raise WorkerError("CODE resume refused: recorded base commit is not an "
+                          "ancestor of HEAD — the repo moved underneath the phase")
+    if _git(target_repo, "status", "--porcelain").stdout.strip():
+        raise WorkerError("CODE resume refused: dirty tree — restore or commit "
+                          "manually; the pipeline never guesses")
+    done = set()
+    for c in st["completed"]:
+        if (_git(target_repo, "merge-base", "--is-ancestor", c["commit"], "HEAD",
+                 check=False).returncode != 0
+                or not os.path.exists(c["patch"])):
+            raise WorkerError(f"CODE resume refused: recorded commit or patch for "
+                              f"{c['task']} is missing — state is inconsistent")
+        done.add(c["task"])
+    return st, done
+
 def _run_pxx(target_repo):
     if not target_repo or not os.path.isdir(target_repo):
         raise WorkerError(f"pxx worker needs a valid target_repo, got: {target_repo!r}")
@@ -53,9 +106,11 @@ def _run_pxx(target_repo):
     plan = json.load(open("artifacts/plan.json"))
     os.makedirs("artifacts/diff", exist_ok=True)
     iso_path = os.path.join(target_repo, "pxx.toml")
-    diffs = []
+    st, done = _load_code_state(target_repo)
     try:
         for task in plan["tasks"]:
+            if task["id"] in done:
+                continue  # idempotent resume: commit + patch verified present
             # pxx STASHES repo-local config after reading it (run id suffix
             # "+stash"): the isolation file is consumed and removed by each
             # invocation. Rewrite it fresh before EVERY task, or task N+1
@@ -123,12 +178,17 @@ def _run_pxx(target_repo):
             path = f"artifacts/diff/{task['id']}.patch"
             with open(path, "w") as f:
                 f.write(diff)
-            diffs.append({"task": task["id"], "path": path,
-                          "criterion": task["criterion"],
-                          "scope": scope or changed})
+            st["completed"].append({"task": task["id"],
+                                    "commit": _git(target_repo, "rev-parse", "HEAD").stdout.strip(),
+                                    "patch": path, "scope": scope or changed})
+            _write_code_state(st)
     finally:
         if os.path.exists(iso_path):
             os.remove(iso_path)
+    by_task = {c["task"]: c for c in st["completed"]}
+    diffs = [{"task": t["id"], "path": by_task[t["id"]]["patch"],
+              "criterion": t["criterion"], "scope": by_task[t["id"]]["scope"]}
+             for t in plan["tasks"]]
     with open("artifacts/diff/manifest.json", "w") as f:
         from pipeline import state as _state
         json.dump({"diffs": diffs,

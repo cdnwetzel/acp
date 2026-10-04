@@ -134,7 +134,14 @@ def run_all(workers=None, stop_after=None):
             detail = {"lifecycle_id": uuid.uuid4().hex[:12]}
         state.emit(phase, "started", detail=detail)
         mod = importlib.import_module(f"pipeline.phases.{phase}")
-        artifact = mod.run(**workers[phase]) if phase in workers else mod.run(mock=True)
+        try:
+            artifact = mod.run(**workers[phase]) if phase in workers else mod.run(mock=True)
+        except Exception as e:
+            # M-5: the ledger is the source of truth — a worker failure is a
+            # ledgered, classified event, not just transcript/envelope noise.
+            state.emit(phase, "worker_failed", detail={
+                "error_type": type(e).__name__, "error": str(e)[:500]})
+            raise
         try:
             GATE[phase]()
         except gates.GateError as e:
