@@ -64,6 +64,13 @@ def test_partial_hunk_without_repo_fails_closed(tmp_path):
     contras, lims = imports.check_imports(open(PARTIAL).read(), plan, manifest, None)
     assert any("unparseable Python" in l for l in lims), lims
 
+def test_reviewed_source_records_selection(tmp_path):
+    """The check's input provenance must be reportable (owner acceptance)."""
+    plan, manifest, repo = _scenario(tmp_path)
+    patch = open(PARTIAL).read()
+    assert imports.reviewed_source(patch, repo) == "repo ground truth (calc.py)"
+    assert "post-image" in imports.reviewed_source(patch, None)
+
 def test_reexport_satisfies_resolution(tmp_path):
     plan, manifest, repo = _scenario(tmp_path)
     os.path.join(repo)

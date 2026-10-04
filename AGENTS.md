@@ -239,22 +239,29 @@ confirmed).
 ## Open / parked register (must stay visible — not closed findings)
 
 - **REVIEW phase**: drill PASSED in scope (CODE+REVIEW, 2026-10-03) — no
-  general readiness claim. OPEN DEFECT for next drill: author==reviewer
-  model (vacuous-gate risk, sdlc invariant author!=reviewer); next REVIEW
-  drill must use a distinct model+stack (candidate: Asrock qwen2.5:14b
-  via Ollama). True different-vendor review unavailable on HOME fleet
-  (all Qwen-family; Nemotron parked).
+  general readiness claim. Author==reviewer defect CLOSED (2026-10-03/04):
+  independence preflight blocks self-review at runtime; independent drills
+  run Asrock qwen2.5:14b via Ollama (:11434, intentional recorded route).
+  Residual accepted risk: all fleet models are Qwen-family, so
+  vendor/family independence is incomplete by construction.
 - **TEST phase**: real-phase status EARNED in drill scope (2026-10-04) —
   executes the target repo's suite; proven by reproducing the import
   defect into a gate_failed stop. NOT production readiness.
-- **Next design item**: dependency-aware REVIEW contract — the repeated
-  `divide`/`ops.py` import defect is preserved as a regression fixture
-  (tests/fixtures/TASK-3-broken-import.patch). Contract gains: dependency
-  closure, changed-file ownership/definitions, explicit cross-task
-  reconciliation; author transcript stays excluded. The next drill tests
-  this contract against the fixture defect.
+- **Mechanical import-resolution layer (REVIEW)**: deterministic ast-based
+  provenance gate, shipped 2026-10-04; reviewer disposition cannot override
+  it. Reviewed-file imports read from repo ground truth (scope-isolation
+  invariant); diff post-image is fallback-only, fail-closed, and the
+  selected source is recorded in review.md. Regression fixtures:
+  tests/fixtures/TASK-3-broken-import.patch (contradiction),
+  TASK-1-partial-hunk.patch (gate-defect false positive).
   INTAKE/PLAN/VERIFY/VALIDATE stay mocked until per-phase preflight +
   Chris-authorized drill.
+- **AC-3 specification finding (OPEN, 2026-10-04)**: drill (a) showed
+  AC-3's wording ("test_calc.py contains a passing test for divide") is
+  satisfiable by a LOCAL divide copy in the test file — it does not test
+  ops.divide. Criterion deliberately UNCHANGED during the parser
+  correction; rewording is a separate owner decision (feeds the parked
+  intake/spec-template work).
 - **49,152 service**: probationary; steady-state watch required.
 - **C5** NUC11 warm standby: gated on the functional state machine (mock
   lifecycle proven 2026-10-03; standby build itself not started).

@@ -162,6 +162,15 @@ def _reviewed_trees(diff_text, target_repo):
                 for f in files]
     return [("reviewed diff", _tree(post_image(diff_text), "reviewed diff"))]
 
+def reviewed_source(diff_text, target_repo):
+    """Which source the mechanical check will parse — recorded in review.md so
+    the evidence states its own provenance (owner acceptance condition)."""
+    files = _diff_files(diff_text)
+    if target_repo and files and all(
+            os.path.exists(os.path.join(target_repo, f)) for f in files):
+        return f"repo ground truth ({', '.join(files)})"
+    return "diff post-image (fallback — repo content unavailable)"
+
 def check_imports(diff_text, plan, manifest, target_repo=None):
     """Verify every `from module import name` in the reviewed diff resolves
     via the ownership map. Returns (contradictions, limitations)."""
