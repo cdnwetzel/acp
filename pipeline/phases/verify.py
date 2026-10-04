@@ -1,11 +1,15 @@
-"""Phase: VERIFY. Worker contract defined in SPEC.md.
-
-TODO: wire worker (LLM or local tool) behind the artifact contract.
-On failure: raise with full context — never return partial artifact silently.
-"""
-from pipeline import state
+"""Phase: VERIFY. Mock worker only — real workers are NOT wired (guardrail #5)."""
+import json
 
 PHASE = "verify"
 
-def run(**inputs):
-    raise NotImplementedError("worker not wired for phase " + PHASE)
+def run(mock=False):
+    if not mock:
+        raise NotImplementedError("worker not wired for phase " + PHASE)
+    intake = json.load(open("artifacts/intake.json"))
+    lines = ["# verification.md", "", "| acceptance criterion | evidence | verdict |", "|---|---|---|"]
+    for ac in intake["acceptance_criteria"]:
+        lines.append(f"| {ac} | artifacts/test.log (tests/test_state.py) | PASS |")
+    with open("artifacts/verification.md", "w") as f:
+        f.write("\n".join(lines) + "\n")
+    return "artifacts/verification.md"

@@ -95,6 +95,10 @@ def verify_chain(ledger=LEDGER):
 
 RUN_ID = uuid.uuid4().hex[:12]
 
+def rows(ledger=LEDGER):
+    """All ledger rows in order (read-only view)."""
+    return _rows(ledger)
+
 class ChainError(RuntimeError):
     """The ledger failed integrity verification. Stop the line."""
 

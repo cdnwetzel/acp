@@ -24,10 +24,11 @@ Retries are bounded (1 re-plan, 3 test-fix loops) then escalate. No silent failu
 4. Human approval events carry an explicit approve/deny + reason string.
 5. Distinguish config (intake) vs behavior (plan/code/test) vs consequence (verify/validate).
 
-Artifact contracts (SPEC.md): `intake.json`, `plan.md` + tasks (1:1 with
-acceptance criteria, acyclic deps), `diff/` (one diff per task), `review.md`
-(every issue resolved or waived-with-reason), `test.log` (no silent skips),
-`verification.md` (traceability matrix), `validation.md` (human sign-off).
+Artifact contracts (SPEC.md): `intake.json`, `plan.json` + tasks (1:1 with
+acceptance criteria, acyclic deps), `diff/manifest.json` (one diff per task),
+`review.md` (every issue resolved or waived-with-reason), `test.log` (no
+silent skips), `verification.md` (traceability matrix), `validation.md`
+(human sign-off).
 
 ## Repository layout
 
@@ -37,13 +38,18 @@ pipeline/
                    canonical form, prev_hash + per-row stored hash, genesis=64
                    zeros, legacy prefix, correction rows, flock-serialized
                    emit, flush+fsync); emit() / verify_chain() / current_phase()
+  validate.py    — stdlib JSON-schema-subset validator (type/required/
+                   properties/items/minLength/minItems/pattern)
   gates.py       — pure functions: artifact in -> verdict out; GateError on failure
   approvals.py   — human-gate CLI; writes approve/deny events to the ledger
-  phases/        — one stub per phase (intake, plan, code, review, test,
-                   verify, validate); all currently raise NotImplementedError
+  runner.py      — deterministic orchestrator; mock-worker lifecycle with
+                   ledger-native resume and human-gate pauses
+  phases/        — one module per phase; mock workers only (run(mock=True));
+                   real workers NOT wired (guardrail #5)
 contracts/
-  intake.schema.json — the only schema present so far
-tests/           — pytest: test_state.py, test_gates.py, test_approvals.py
+  intake.schema.json, plan.schema.json, diff_manifest.schema.json
+tests/           — pytest: test_state.py, test_gates.py, test_approvals.py,
+                   test_validate.py, test_runner.py
 README.md, SPEC.md
 ```
 
@@ -68,7 +74,7 @@ python3 -m pipeline.approvals <gate> approve|deny "reason"
 # gates: intake | plan | validate
 ```
 
-**Current test status (2026-10-03): 16 passed, 0 failed.** The two former red tests
+**Current test status (2026-10-03): 25 passed, 0 failed.** The two former red tests
 (wrong module path `pipeline.approve`, missing `import os`) were fixed in the test
 files only. C6 landed the same day: state.py is hash-chained with per-row stored
 hashes (tail-tamper detectable), flock-serialized emit, flush+fsync durability;
@@ -202,6 +208,19 @@ confirmed).
 - **mlx-serve** - native Zig server, OpenAI + Anthropic + Ollama APIs, no Python.
 - ~~**brothers-keeper**~~ **STRUCK 2026-10-03** — not deployed on the Jetson;
   the actual watchdog is `gateB_loop.py` + psoperator (probe-verified, inv. 2.12).
+
+## Open / parked register (must stay visible — not closed findings)
+
+- **49,152 service**: probationary; steady-state watch required.
+- **C5** NUC11 warm standby: gated on the functional state machine.
+- **C8** Slack HITL: approved in principle, deferred; NUC11 broker.
+- **C3** tunnel retarget: parked; owner-executed if requested.
+- **C1b** KV headroom/offload: requires a before/after tok/s receipt.
+- **10.0.1.54**: unidentified Qdrant visitor; denied and monitored.
+
+Ledger policy (ratified 2026-10-03): `state.jsonl` is operational state, NOT
+source — never committed. Continuity comes from C5's standby/head-receipt
+mechanism and backups held outside Git, not from repository history.
 
 ## Security / operational considerations
 
