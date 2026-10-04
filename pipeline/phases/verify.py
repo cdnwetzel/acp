@@ -32,6 +32,13 @@ def run(mock=False, worker=None, target_repo=None):
         f.write("\n".join(lines) + "\n")
     return "artifacts/verification.md"
 
+def _untraced_criteria(doc, acs):
+    """Criteria not quoted byte-for-byte in the document (verbatim
+    traceability — failure class, lifecycle run 10: the verifier emitted a
+    literal \\u2014 escape instead of the em dash; paraphrase-class
+    corruption must fail the phase BEFORE write)."""
+    return [a for a in acs if a not in doc]
+
 def _run_pxx(target_repo):
     from pipeline import endpoints
     ep = endpoints.resolve(PHASE)
@@ -66,7 +73,10 @@ def _run_pxx(target_repo):
         "Output contract, exactly:\n"
         "# verification.md\n\n"
         "| acceptance criterion | evidence | verdict |\n|---|---|---|\n"
-        "one row per criterion, quoting the criterion VERBATIM, verdict PASS "
+        "one row per criterion, quoting the criterion VERBATIM — BYTE-FOR-BYTE "
+        "as it appears below, with the exact original characters (never a "
+        "paraphrase, never a unicode escape sequence like \\u2014 in place of "
+        "the character itself), verdict PASS "
         "or FAIL with the specific evidence relied on; then a '## Limitations' "
         "section stating honestly what this evidence does NOT prove "
         "(non-empty, specific — never perfunctory).\n"
@@ -94,6 +104,21 @@ def _run_pxx(target_repo):
         raise WorkerError(
             "verify produced no verification document in the required format "
             "— refusing to fabricate; see artifacts/verify.transcript.log")
+    # Mechanical verbatim traceability (failure class, lifecycle run 10
+    # 2026-10-04): every acceptance criterion must appear BYTE-FOR-BYTE in
+    # the document — the verifier addresses the actual criterion text, never
+    # a paraphrase or a serialization artifact (the run-10 verifier emitted a
+    # literal \u2014 escape instead of an em dash; gate_verify caught it
+    # post-write; this catches it BEFORE write, same pattern as PLAN's 1:1
+    # pre-write check). gate_verify re-checks post-write; that stays.
+    acs = intake["acceptance_criteria"]
+    untraced = _untraced_criteria(doc, acs)
+    if untraced:
+        raise WorkerError(
+            f"VERIFY output fails verbatim traceability: {len(untraced)} of "
+            f"{len(acs)} criteria not quoted byte-for-byte (first: "
+            f"{untraced[0][:60]}…) — refusing to write a non-conformant "
+            f"artifact (see artifacts/verify.transcript.log)")
     if iso_path:  # read-only boundary: VERIFY must not have touched the repo
         dirty = subprocess.run(["git", "status", "--short"],
                                capture_output=True, text=True,

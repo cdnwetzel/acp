@@ -32,6 +32,44 @@ def test_extract_document_from_pxx_output():
 def test_extract_document_absent_fails_loudly():
     assert verify._extract_document("the model rambled without a document\n") is None
 
+AC = "AC-1: BEHAVIOR: x — y. SUBJECT: add owned by calc.py. SCOPE: calc.py only."
+
+def test_untraced_criteria_passes_verbatim_quote():
+    doc = f"# verification.md\n\n| {AC} | test.log | PASS |\n\n## Limitations\n\n- limits\n"
+    assert verify._untraced_criteria(doc, [AC]) == []
+
+def test_untraced_criteria_catches_escape_corruption():
+    """Run-10 failure class: a literal  escape in place of the em dash
+    is paraphrase-class corruption — verbatim traceability must fail."""
+    corrupted = AC.replace("—", "\\u2014")
+    doc = f"# verification.md\n\n| {corrupted} | test.log | PASS |\n"
+    assert verify._untraced_criteria(doc, [AC]) == [AC]
+
+def test_untraced_criteria_catches_paraphrase():
+    doc = "# verification.md\n\n| AC-1: the add fix works | test.log | PASS |\n"
+    assert verify._untraced_criteria(doc, [AC]) == [AC]
+
+def test_run_pxx_refuses_to_write_non_traced_document(tmp_path, monkeypatch):
+    """Phase-level: a corrupt-quoted document is refused BEFORE write — the
+    artifact never lands, the error names the class."""
+    monkeypatch.chdir(tmp_path)
+    os.makedirs("artifacts/diff")
+    json.dump({"acceptance_criteria": [AC]}, open("artifacts/intake.json", "w"))
+    open("artifacts/test.log", "w").write("COMMAND: pytest\nEXIT_CODE: 0\nDURATION_S: 1\n1 passed\n")
+    json.dump({"diffs": []}, open("artifacts/diff/manifest.json", "w"))
+    open("artifacts/review.md", "w").write("# review.md\n")
+    bad_doc = "# verification.md\n\n| " + AC.replace("—", "\\u2014") + " | t | PASS |\n\n## Limitations\n\n- x\n"
+    import types
+    fake = types.SimpleNamespace(returncode=0, stdout="[COMPLETED]\n" + bad_doc, stderr="")
+    monkeypatch.setattr(verify.subprocess, "run", lambda *a, **kw: fake)
+    monkeypatch.setattr(verify, "assert_independence", lambda *a, **kw: None)
+    monkeypatch.setattr(verify, "check_access", lambda ep: None)
+    import pipeline.endpoints as endpoints
+    monkeypatch.setattr(endpoints, "resolve", lambda phase: EP)
+    with pytest.raises(WorkerError, match="verbatim traceability"):
+        verify.run(worker="pxx")
+    assert not os.path.exists("artifacts/verification.md")  # no partial artifact
+
 EP = {"model": "qwen2.5:14b-instruct-q4_k_m", "endpoint": "http://10.0.1.115:11434",
       "provider": "ollama", "worker": "asrock-verifier"}
 
