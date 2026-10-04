@@ -15,6 +15,12 @@ Provenance rules (tightened 2026-10-04 — "imported" is NOT "defined"):
 A contradiction (symbol not provided by the imported-from owned module but
 provided elsewhere, or by nothing) cannot be marked RESOLVED by the reviewer.
 Complements TEST: proves reference consistency, never runtime correctness.
+
+Ground truth for the REVIEWED file is its post-CODE repo content (scope
+isolation makes it identical to the diff's full post-image). Parsing the
+diff's post-image directly is FALLBACK only: a partial hunk reconstructs as
+a fragment, not a file — a fragment that fails to parse fails closed, and a
+fragment that parses can silently miss imports (gate defect, drill 2026-10-04).
 """
 import ast, os
 
@@ -140,6 +146,22 @@ def _provides(fname, name, manifest, target_repo, cache, seen=None):
         return False  # re-export from an external module is not provable here
     return _provides(src_file, orig_name, manifest, target_repo, cache, seen)
 
+def _diff_files(diff_text):
+    """Files touched by a unified diff, from 'diff --git a/X b/Y' headers."""
+    return [line.split(" b/")[-1].strip()
+            for line in diff_text.splitlines()
+            if line.startswith("diff --git") and " b/" in line]
+
+def _reviewed_trees(diff_text, target_repo):
+    """(fname, tree) for each file the reviewed diff touches. Repo content is
+    authoritative; post-image only when repo content is unavailable."""
+    files = _diff_files(diff_text)
+    if target_repo and files and all(
+            os.path.exists(os.path.join(target_repo, f)) for f in files):
+        return [(f, _tree(open(os.path.join(target_repo, f)).read(), f))
+                for f in files]
+    return [("reviewed diff", _tree(post_image(diff_text), "reviewed diff"))]
+
 def check_imports(diff_text, plan, manifest, target_repo=None):
     """Verify every `from module import name` in the reviewed diff resolves
     via the ownership map. Returns (contradictions, limitations)."""
@@ -150,17 +172,20 @@ def check_imports(diff_text, plan, manifest, target_repo=None):
         for f in d.get("scope") or []:
             ownership[f] = d["task"]
     try:
-        tree = _tree(post_image(diff_text), "reviewed diff")
-        imports = _imports(tree)
+        trees = _reviewed_trees(diff_text, target_repo)
+        imports = []
+        for _, tree in trees:
+            imports.extend(_imports(tree))
     except ImportLimitation as e:
         return [], [str(e)]
-    for node in ast.walk(tree):  # plain `import x` of an owned module: unverified attribute usage
-        if isinstance(node, ast.Import):
-            for a in node.names:
-                if a.name + ".py" in ownership:
-                    limitations.append(
-                        f"line {node.lineno}: plain import of owned module "
-                        f"'{a.name}' — attribute usage unverified (narrow contract)")
+    for _, tree in trees:  # plain `import x` of an owned module: unverified attribute usage
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for a in node.names:
+                    if a.name + ".py" in ownership:
+                        limitations.append(
+                            f"line {node.lineno}: plain import of owned module "
+                            f"'{a.name}' — attribute usage unverified (narrow contract)")
     for module, names, lineno in imports:
         if "." in module:
             limitations.append(f"line {lineno}: package import '{module}' outside the narrow contract — unverified")
