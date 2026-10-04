@@ -67,3 +67,60 @@ def test_relative_import_fails_closed(tmp_path):
     bad = "diff --git a/test_calc.py b/test_calc.py\n+from . import helper\n"
     contras, lims = imports.check_imports(bad, plan, manifest, repo)
     assert any("relative import" in l for l in lims)
+
+def _with_repo_file(repo, fname, content):
+    with open(os.path.join(repo, fname), "w") as f:
+        f.write(content)
+
+def test_imported_name_does_not_make_file_a_provider(tmp_path):
+    """The original hole: test_calc.py IMPORTS divide — that must NOT make
+    test_calc.py a provider of divide to others."""
+    plan, manifest, repo = _scenario(tmp_path)
+    other = "diff --git a/extra.py b/extra.py\n+from test_calc import divide\n"
+    manifest["diffs"].append({"task": "TASK-3", "path": "artifacts/diff/TASK-3.patch",
+                              "scope": ["test_calc.py"]})
+    contras, _ = imports.check_imports(other, plan, manifest, repo)
+    assert any("divide" in c for c in contras), contras
+
+def test_alias_reexport_proves_aliased_name(tmp_path):
+    plan, manifest, repo = _scenario(tmp_path)
+    _with_repo_file(repo, "calc.py", "from ops import divide as dv\n")
+    good = "diff --git a/test_calc.py b/test_calc.py\n+from calc import dv\n"
+    contras, _ = imports.check_imports(good, plan, manifest, repo)
+    assert contras == [], contras
+
+def test_alias_does_not_prove_original_name(tmp_path):
+    plan, manifest, repo = _scenario(tmp_path)
+    _with_repo_file(repo, "calc.py", "from ops import divide as dv\n")
+    bad = "diff --git a/test_calc.py b/test_calc.py\n+from calc import divide\n"
+    contras, _ = imports.check_imports(bad, plan, manifest, repo)
+    assert any("divide" in c for c in contras), contras
+
+def test_unproven_reexport_is_contradiction(tmp_path):
+    plan, manifest, repo = _scenario(tmp_path)
+    _with_repo_file(repo, "calc.py", "from ops import nonexistent\n")
+    bad = "diff --git a/test_calc.py b/test_calc.py\n+from calc import nonexistent\n"
+    contras, _ = imports.check_imports(bad, plan, manifest, repo)
+    assert any("nonexistent" in c for c in contras), contras
+
+def test_reexport_cycle_fails_closed_not_hangs(tmp_path):
+    plan, manifest, repo = _scenario(tmp_path)
+    _with_repo_file(repo, "calc.py", "from ops import thing\n")
+    _with_repo_file(repo, "ops.py", "from calc import thing\n")
+    bad = "diff --git a/test_calc.py b/test_calc.py\n+from calc import thing\n"
+    contras, _ = imports.check_imports(bad, plan, manifest, repo)
+    assert any("thing" in c for c in contras), contras  # cycle => unproven => contradiction
+
+def test_dynamic_import_fails_closed(tmp_path):
+    plan, manifest, repo = _scenario(tmp_path)
+    _with_repo_file(repo, "calc.py", "import importlib\nimportlib.import_module('ops')\n")
+    bad = "diff --git a/test_calc.py b/test_calc.py\n+from calc import divide\n"
+    contras, lims = imports.check_imports(bad, plan, manifest, repo)
+    assert any("dynamic importlib" in l for l in lims), lims
+
+def test_plain_import_of_owned_module_is_limitation(tmp_path):
+    plan, manifest, repo = _scenario(tmp_path)
+    diff = "diff --git a/test_calc.py b/test_calc.py\n+import calc\n+import os\n"
+    contras, lims = imports.check_imports(diff, plan, manifest, repo)
+    assert any("plain import of owned module 'calc'" in l for l in lims), lims
+    assert not any("plain import of owned module 'os'" in l for l in lims)
