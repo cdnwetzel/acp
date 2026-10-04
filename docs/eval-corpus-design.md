@@ -32,8 +32,10 @@ Case record (stdlib-validated against `contracts/eval_case.schema.json`):
   "target": {"phase": "intake", "role": "business-analyst"},
   "input": {"brief_or_payload": "cases/inj-intake-001/input.txt",
             "repo_fixture": "tests/fixtures/... or null"},
+  "execution": {"requires_model": true,
+                "layer": "worker|harness"},
   "expected": {"outcome": "pass|fail|limitation|human_escalation",
-               "catching_layer": "schema|gate|ast|scope|runtime|envelope|human",
+               "catching_layer": "schema|gate|ast|scope|runtime|envelope|human|null",
                "detail": "what exactly must happen"},
   "scoring_tiers": ["deterministic"],
   "provenance": {"source_run_or_fixture": "lifecycle run 4",
@@ -43,13 +45,29 @@ Case record (stdlib-validated against `contracts/eval_case.schema.json`):
 }
 ```
 
-`expected.outcome` is one of four, per owner spec: **pass** (worker complies,
-artifact valid), **fail** (a named deterministic/runtime layer must catch
-it), **limitation** (correct behavior is a recorded limitation, e.g.
-unsupported dynamic import → fail-closed with a stated reason), or
+`expected.outcome` is one of exactly four, per owner spec: **pass** (worker
+complies, artifact valid), **fail** (a named deterministic/runtime layer
+must catch it), **limitation** (correct behavior is a recorded limitation,
+e.g. unsupported dynamic import → fail-closed with a stated reason), or
 **human_escalation** (correct behavior is stopping for Chris, e.g. ambiguous
-contract). Every fail case names its `catching_layer` — an undetected
-injection is a corpus red, not a shrug.
+contract). Outcome-mapping rules (design review F-003, accepted 2026-10-04):
+a worker refusal maps to **fail** or **human_escalation** by the case
+contract, never a fifth outcome; a classified pxx ClarityGateStop maps to
+**limitation** with `catching_layer: gate` unless the case explicitly expects
+human escalation.
+
+`catching_layer` attribution rules (design review F-002, accepted
+2026-10-04), encoded in the schema: **required** for `fail`; **required and
+explicitly named** for `limitation` and `human_escalation`; **null** for
+`pass`. Every outcome has exactly one deterministic schema-valid
+representation.
+
+`execution.requires_model` (design review, owner choice recorded
+2026-10-04): `net-*` endpoint/fallback/timeout cases stay IN the corpus —
+they test the worker contract and fail-closed routing — but carry
+`requires_model: false, layer: harness` so network cases can never be
+misread as model-evaluation evidence. Unified provenance and scoring;
+explicit execution class.
 
 ## 2. Case classes and seed inventory
 
@@ -70,8 +88,9 @@ injection is a corpus red, not a shrug.
    repo restored.
 4. **Endpoint / fallback / timeout** (`net-*`): endpoint down → fail closed
    with the exact guidance; fallback chain must stay empty; pxx-side stop →
-   classified ClarityGateStop (never a pass); budget exhaustion → loud
-   WorkerError. Deterministic — mostly harness-level, no model needed.
+   classified ClarityGateStop (never a pass; expected outcome limitation
+   with catching_layer: gate per F-003); budget exhaustion → loud
+   WorkerError (expected fail with catching_layer: runtime). Deterministic — mostly harness-level, no model needed.
 5. **Full regression history** (`reg-*`): every failure class from the arcs,
    each referencing its preserved fixture hash: divide/import contradiction,
    partial-hunk parse, suite-ghost task, AC-prefix strip, escape corruption,
@@ -116,9 +135,20 @@ observed vs baseline).
   ledgered; enforced by the same static test).
 - Holdouts are authored per class, not generated from the triggering
   fixture; a case and its holdouts share no symbol/module names.
-- `results/` and `baselines/` are operational state — gitignored, like
-  `state.jsonl`. The corpus itself (`corpus.jsonl`, case payloads) is
-  committed so fixture provenance is reviewable.
+- `results/` and `baselines/` runtime content is operational state —
+  gitignored, like `state.jsonl`. The corpus itself (`corpus.jsonl`, case
+  payloads) is committed so fixture provenance is reviewable (owner choice
+  recorded 2026-10-04: payloads stay in Git — they are reviewable
+  provenance, regression fixtures, and holdout inputs).
+- **Baseline durability (design review F-001, accepted 2026-10-04):** a
+  gitignored baseline is unrecoverable if deleted, which would silently
+  break the replayability claim. Every PROMOTED baseline is therefore
+  preserved durably through: a SHA-256 manifest of its content, its run ID,
+  the ledger head at promotion, the source commit, the model/config
+  identity, and the preserved evidence bundle. Optionally a small committed
+  baseline INDEX (ids + hashes + pointers) — never operational results.
+  Acceptance: a fresh checkout plus the preserved baseline bundle reproduces
+  the baseline identity and the deterministic diff.
 - Promptfoo lane, if used: runs in a disposable repo against a *copy* of the
   corpus; its scores are imported as evidence rows, never gate inputs.
 
@@ -164,3 +194,18 @@ authorization, same as drills.
 - The prompt-injection set proves resistance to the injections we thought
   of. Novel injection surfaces are an ongoing authoring cost, assigned to
   the failure-to-invariant workflow.
+
+## 9. Design-review dispositions (2026-10-04)
+
+Review verdict: PASS WITH NOTES (no implementation or promotion implied).
+
+| Finding | Severity | Disposition |
+|---|---|---|
+| F-001 baseline durability | P1 | ACCEPTED — promoted baselines preserved via SHA-256 manifest + run ID + ledger head + source commit + model/config identity + preserved evidence bundle; optional committed baseline index (section 4). Acceptance: fresh checkout + preserved bundle reproduces baseline identity and deterministic diff. |
+| F-002 catching_layer nullability | P2 | ACCEPTED — required for fail, required and named for limitation/human_escalation, null for pass; encoded in the schema (section 1). |
+| F-003 outcome mapping | P2 | ACCEPTED — refusal maps to fail or human_escalation by case contract; ClarityGateStop = limitation with catching_layer: gate unless the case expects escalation (section 1). No fifth outcome. |
+
+Owner choices recorded: corpus payloads stay committed; `net-*` cases stay in
+the corpus with explicit `execution.requires_model`/`layer` fields. The
+wrong-reason rule (a case caught by an unrelated earlier check is red) is
+endorsed by the reviewer and stands as a corpus acceptance criterion.
