@@ -255,7 +255,10 @@ confirmed).
   drills, NOT equivalent independence; verifier!=author is
   runtime-enforced. Verifier evidence narratives are model judgments and
   can overclaim; the gate guarantees traceability format, TEST stays the
-  factual backstop. Retargeting :8007 is a separate owner decision.
+  factual backstop. Evidence rule (SPEC.md): verification.md carries a
+  machine-generated provenance header (identity, independence, test exit
+  code, deterministic checks) — never model-authored. Retargeting :8007
+  is a separate owner decision.
 - **Mechanical import-resolution layer (REVIEW)**: deterministic ast-based
   provenance gate, shipped 2026-10-04; reviewer disposition cannot override
   it. Reviewed-file imports read from repo ground truth (scope-isolation
@@ -267,12 +270,16 @@ confirmed).
   TASK-1-partial-hunk.patch (gate-defect false positive).
   INTAKE/PLAN/VALIDATE stay mocked until per-phase preflight +
   Chris-authorized drill.
-- **AC-3 specification finding (OPEN, 2026-10-04)**: drill (a) showed
-  AC-3's wording ("test_calc.py contains a passing test for divide") is
-  satisfiable by a LOCAL divide copy in the test file — it does not test
-  ops.divide. Criterion deliberately UNCHANGED during the parser
-  correction; rewording is a separate owner decision (feeds the parked
-  intake/spec-template work).
+- **AC-3 specification finding (RESOLVED forward, 2026-10-04)**: drill (a)
+  showed AC-3's wording ("test_calc.py contains a passing test for
+  divide") is satisfiable by a LOCAL divide copy in the test file — it
+  does not test ops.divide. Owner-approved forward correction (SPEC.md):
+  future drills use "test_calc.py contains a passing test that imports
+  divide from ops and exercises it, including a/b and zero-division
+  ValueError". Historical drills keep their original criteria — NOT
+  retroactive. Generalized into the four-part authoring convention
+  (behavior, subject, evidence source, scope); schema enforcement deferred
+  until INTAKE goes real; mock INTAKE rehearses criteria_structured.
 - **49,152 service**: probationary; steady-state watch required.
 - **C5** NUC11 warm standby: gated on the functional state machine (mock
   lifecycle proven 2026-10-03; standby build itself not started).
