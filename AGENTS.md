@@ -247,6 +247,15 @@ confirmed).
 - **TEST phase**: real-phase status EARNED in drill scope (2026-10-04) —
   executes the target repo's suite; proven by reproducing the import
   defect into a gate_failed stop. NOT production readiness.
+- **VERIFY phase**: real-phase status EARNED in drill scope (2026-10-04) —
+  verify-only drill against preserved hashed artifacts, then full
+  four-real-phase lifecycle to `done`. CAVEAT: VERIFY shares the
+  reviewer's model+host+stack (:11434 Ollama) after :8007 probed
+  non-OpenAI-compatible (all API routes 404) — acceptable for scoped
+  drills, NOT equivalent independence; verifier!=author is
+  runtime-enforced. Verifier evidence narratives are model judgments and
+  can overclaim; the gate guarantees traceability format, TEST stays the
+  factual backstop. Retargeting :8007 is a separate owner decision.
 - **Mechanical import-resolution layer (REVIEW)**: deterministic ast-based
   provenance gate, shipped 2026-10-04; reviewer disposition cannot override
   it. Reviewed-file imports read from repo ground truth (scope-isolation
@@ -256,7 +265,7 @@ confirmed).
   parse result/error) — never a reviewer claim in review.md. Regression fixtures:
   tests/fixtures/TASK-3-broken-import.patch (contradiction),
   TASK-1-partial-hunk.patch (gate-defect false positive).
-  INTAKE/PLAN/VERIFY/VALIDATE stay mocked until per-phase preflight +
+  INTAKE/PLAN/VALIDATE stay mocked until per-phase preflight +
   Chris-authorized drill.
 - **AC-3 specification finding (OPEN, 2026-10-04)**: drill (a) showed
   AC-3's wording ("test_calc.py contains a passing test for divide") is
