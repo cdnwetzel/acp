@@ -1,0 +1,65 @@
+{
+  "comment": "ACP endpoint manifest — the ONE resolver for phase->endpoint routing (plan section 9: one config resolver, never the environment). Endpoint selection is CONFIG; worker behavior stays behind contracts. Mock runners do not consult this file; only real workers do.",
+  "phases": {
+    "intake": {
+      "worker": "governed-27b",
+      "endpoint": "http://127.0.0.1:8004/v1",
+      "access": "ssh-local-forward",
+      "forward": "ssh -N -L 8004:127.0.0.1:8004 chris@10.0.1.125",
+      "model": "qwen3.8-27b",
+      "note": "D4: ACP -> labrouter :8004 (loopback on T5810) -> vllm :8007. Never raw LAN :8007."
+    },
+    "plan": {
+      "worker": "governed-27b",
+      "endpoint": "http://127.0.0.1:8004/v1",
+      "access": "ssh-local-forward",
+      "forward": "ssh -N -L 8004:127.0.0.1:8004 chris@10.0.1.125",
+      "model": "qwen3.8-27b",
+      "note": "D4: governed path only."
+    },
+    "code": {
+      "worker": "governed-27b",
+      "endpoint": "http://127.0.0.1:8004/v1",
+      "access": "ssh-local-forward",
+      "forward": "ssh -N -L 8004:127.0.0.1:8004 chris@10.0.1.125",
+      "model": "qwen3.8-27b",
+      "note": "D4: governed path only. First real-worker candidate (pxx)."
+    },
+    "review": {
+      "worker": "governed-27b",
+      "endpoint": "http://127.0.0.1:8004/v1",
+      "access": "ssh-local-forward",
+      "forward": "ssh -N -L 8004:127.0.0.1:8004 chris@10.0.1.125",
+      "model": "qwen3.8-27b",
+      "note": "D4: governed path only."
+    },
+    "test": {
+      "worker": "local",
+      "endpoint": null,
+      "access": "local",
+      "note": "pytest/build on the node under test; ACP scaffold on NUC11."
+    },
+    "verify": {
+      "worker": "asrock-verifier",
+      "endpoint": "http://10.0.1.115:8007",
+      "access": "lan",
+      "model": "qwen2.5:14b-instruct-q4_k_m",
+      "note": "Judge/verifier on Asrock (health-verified 2026-10-03)."
+    },
+    "validate": {
+      "worker": "human",
+      "endpoint": null,
+      "access": "ledger",
+      "note": "Owner sign-off via pipeline.approvals; no model endpoint."
+    }
+  },
+  "escalation": {
+    "second_opinion": {
+      "worker": "ollama-3700x",
+      "endpoint": "http://10.0.1.34:11434",
+      "access": "lan",
+      "model": "qwen3:4b",
+      "note": "D1: escalation/second-opinion only, never a scheduled phase. Client should pass think=false."
+    }
+  }
+}
