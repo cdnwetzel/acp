@@ -56,13 +56,15 @@ def run(mock=False, worker=None, problem=None):
     return "artifacts/intake.json"
 
 _CONVENTION = (
-    "Every acceptance criterion must name four parts: BEHAVIOR (the observable "
-    "result), SUBJECT (the symbol/module under test including its origin, e.g. "
-    "'divide imported from ops' — not just 'divide'), EVIDENCE SOURCE (where "
-    "proof must appear, e.g. 'test.log must show test_divide passing'), and "
-    "SCOPE (which files the criterion constrains). A criterion that can be "
-    "satisfied letter-correct but behaviorally weak (e.g. a local copy of the "
-    "subject inside the test file) is a FAILED criterion.")
+    "Every acceptance criterion must name four labeled parts: BEHAVIOR (the "
+    "observable result), SUBJECT (the required symbol AND its owning module, "
+    "e.g. 'divide owned by ops.py' — never a bare name), EVIDENCE SOURCE "
+    "(where proof must appear — the recorded test.log, never ad-hoc checks), "
+    "and SCOPE (which files the criterion constrains — one task owns each "
+    "file). Invariants: tests must exercise the OWNED implementation, never "
+    "a local copy, shadow, or redefinition of the subject; a criterion that "
+    "can be satisfied letter-correct but behaviorally fake is a FAILED "
+    "criterion.")
 
 def _run_pxx(problem):
     from pipeline import endpoints, validate

@@ -49,3 +49,35 @@ status, test artifact + exit code, deterministic checks used) produced by
 the pipeline, never the model. Narrative claims in verdict rows are
 unverified unless backed by those sources; overclaim detection is a
 documented limitation, deliberately not gate-enforced yet.
+
+## Failure-to-invariant principle (owner, 2026-10-04)
+
+Every failure produces a durable, general rule plus a regression test;
+neither the rule nor the test may be narrower than the failure class.
+
+Distilled invariants (the intake/defect arcs — the lesson is never
+"remember divide"):
+
+1. Acceptance criteria name the required subject AND its owning module.
+2. Tests must exercise the owned implementation — never a local copy,
+   shadow, or redefinition of the subject.
+3. Evidence must come from the recorded test artifact (test.log), not
+   ad-hoc or unrecorded checks.
+4. One task owns each file, unless same-file sequencing is explicitly
+   designed and drilled.
+
+Anti-overfitting rules:
+
+- Distill failures into invariants, never model-specific instructions.
+- Keep the original fixture; add varied holdout cases (different names,
+  modules, defect shapes) so tests cannot pass by memorizing one world.
+- Test both positive and negative examples.
+- Workers receive only the refined contract — never historical transcripts
+  or rejection history.
+- Every correction records whether it generalizes beyond the triggering
+  fixture (in the ledger row that adopts it).
+
+Known boundary of the mechanical layer: import-resolution catches
+wrong-module/missing-symbol references; a local shadow with NO import is
+outside its contract — that class is carried by the criterion wording
+(invariant 2), REVIEW, and the human gate.

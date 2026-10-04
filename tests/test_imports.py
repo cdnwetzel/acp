@@ -176,3 +176,58 @@ def test_plain_import_of_owned_module_is_limitation(tmp_path):
     contras, lims = imports.check_imports(diff, plan, manifest, repo)
     assert any("plain import of owned module 'calc'" in l for l in lims), lims
     assert not any("plain import of owned module 'os'" in l for l in lims)
+
+HOLDOUT = os.path.join(os.path.dirname(__file__), "fixtures", "holdout-wrong-module.patch")
+
+def _holdout_scenario(tmp_path):
+    """A DIFFERENT world (anti-overfitting, owner 2026-10-04): textutil —
+    upper.py/words.py/test_textutil.py. The check must generalize beyond the
+    calc/divide fixture it was built from."""
+    os.chdir(tmp_path)
+    os.makedirs("artifacts/diff")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "upper.py").write_text("def shout(s):\n    return s.upper()\n")
+    (repo / "words.py").write_text(
+        "def split_words(s):\n    return s.split()\n\n\ndef join_words(w):\n    return ' '.join(w)\n")
+    (repo / "test_textutil.py").write_text(
+        "from upper import shout, split_words\n\ndef test_shout():\n    assert shout('hi') == 'HI'\n")
+    plan = {"tasks": [
+        {"id": "TASK-1", "deps": [], "scope": ["upper.py"]},
+        {"id": "TASK-2", "deps": ["TASK-1"], "scope": ["words.py"]},
+        {"id": "TASK-3", "deps": ["TASK-2"], "scope": ["test_textutil.py"]},
+    ]}
+    manifest = {"diffs": [
+        {"task": "TASK-1", "path": "artifacts/diff/TASK-1.patch", "scope": ["upper.py"]},
+        {"task": "TASK-2", "path": "artifacts/diff/TASK-2.patch", "scope": ["words.py"]},
+        {"task": "TASK-3", "path": "artifacts/diff/TASK-3.patch", "scope": ["test_textutil.py"]},
+    ]}
+    return plan, manifest, str(repo)
+
+def test_holdout_wrong_module_is_contradiction(tmp_path):
+    """Negative holdout: same defect CLASS, different names/modules."""
+    plan, manifest, repo = _holdout_scenario(tmp_path)
+    contras, _ = imports.check_imports(open(HOLDOUT).read(), plan, manifest, repo)
+    assert any("split_words" in c and "words.py" in c for c in contras), contras
+    assert not any("`shout`" in c for c in contras)
+
+def test_holdout_correct_import_resolves(tmp_path):
+    """Positive holdout: correct imports in the unfamiliar world are clean."""
+    plan, manifest, repo = _holdout_scenario(tmp_path)
+    _with_repo_file(repo, "test_textutil.py",
+                    "from upper import shout\nfrom words import split_words\n")
+    good = "diff --git a/test_textutil.py b/test_textutil.py\n+from upper import shout\n+from words import split_words\n"
+    contras, lims = imports.check_imports(good, plan, manifest, repo)
+    assert contras == [] and lims == []
+
+def test_local_shadow_without_import_is_outside_contract(tmp_path):
+    """Documented boundary (SPEC.md failure-to-invariant): a local shadow with
+    NO import produces no contradiction — that class is carried by criterion
+    wording + REVIEW + the human gate, not the mechanical layer."""
+    plan, manifest, repo = _holdout_scenario(tmp_path)
+    _with_repo_file(repo, "test_textutil.py",
+                    "def split_words(s):\n    return s.split()  # local shadow\n\n"
+                    "def test_split():\n    assert split_words('a b') == ['a', 'b']\n")
+    diff = "diff --git a/test_textutil.py b/test_textutil.py\n+def split_words(s):\n+    return s.split()\n"
+    contras, lims = imports.check_imports(diff, plan, manifest, repo)
+    assert contras == [] and lims == []
