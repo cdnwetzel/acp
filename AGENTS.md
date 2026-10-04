@@ -44,8 +44,10 @@ pipeline/
   approvals.py   — human-gate CLI; writes approve/deny events to the ledger
   runner.py      — deterministic orchestrator; mock-worker lifecycle with
                    ledger-native resume and human-gate pauses
-  phases/        — one module per phase; mock workers only (run(mock=True));
-                   real workers NOT wired (guardrail #5)
+  phases/        — one module per phase; mock workers (run(mock=True));
+                   code.py additionally has the opt-in pxx real path
+                   (worker="pxx") under the scoped guardrail-#5 lift;
+                   all other real paths remain NOT wired
 contracts/
   intake.schema.json, plan.schema.json, diff_manifest.schema.json
 tests/           — pytest: test_state.py, test_gates.py, test_approvals.py,
@@ -60,8 +62,10 @@ README.md, SPEC.md
   `setup.py` — nothing to build or install. Version control: private repo
   `cdnwetzel/acp` (initialized 2026-10-03); `state.jsonl` is gitignored —
   the live ledger is operational state, not source.
-- Orchestrator runs on the Mac mini M4; NUC11 is the pytest/CI runner
-  (mock-only until the state machine and gates pass — no LLM wiring).
+- Orchestrator runs on the Mac mini M4; NUC11 is the pytest/CI runner.
+  State machine and gates pass (mock, 2026-10-03); Guardrail #5 has a
+  **scoped, drill-only lift for CODE** (see guardrails) — everything else
+  stays mock.
 
 ## Commands
 
@@ -74,7 +78,7 @@ python3 -m pipeline.approvals <gate> approve|deny "reason"
 # gates: intake | plan | validate
 ```
 
-**Current test status (2026-10-03): 35 passed, 0 failed.** The two former red tests
+**Current test status (2026-10-03): 49 passed, 0 failed.** The two former red tests
 (wrong module path `pipeline.approve`, missing `import os`) were fixed in the test
 files only. C6 landed the same day: state.py is hash-chained with per-row stored
 hashes (tail-tamper detectable), flock-serialized emit, flush+fsync durability;
@@ -184,6 +188,14 @@ whose context reality is governed by live probes, not this table:
 4. **256GB RAM is a KV swap valve, not a serving tier.**
    Configure `--swap-space 16`. Never steady-state.
 5. **NUC11 mock-only** until ACP state machine and gates pass. No LLM wiring.
+   *(Met in mock form 2026-10-03. Scoped, drill-only lift for CODE recorded
+   as owner decision: pxx via governed :8004, operator-started forward,
+   fail-closed fallback (isolated pxx.toml + PXX_* strip), explicit scope
+   verification, sandbox, bounded execution, per-task transcript, ledger
+   evidence. All other phases remain mock. **REVIEW is the NEXT owner
+   decision — not an implied expansion**: it stays mocked until Chris
+   explicitly authorizes a second real-phase drill under the same
+   requirements.)*
 6. **Do not install vLLM-Metal on the Mac mini** until the 16GB constraint is
    acknowledged. Docs recommend 36GB+ for larger models.
 7. **Do not attempt fp8 KV on A4500.** Ampere does not support it.
@@ -211,8 +223,13 @@ confirmed).
 
 ## Open / parked register (must stay visible — not closed findings)
 
+- **REVIEW phase**: NEXT owner decision — mocked until Chris explicitly
+  authorizes a second real-phase drill (same requirements as the CODE
+  drill: governed endpoint, operator forward, fail-closed fallback,
+  explicit scope, sandbox, bounded execution, diff capture, ledger evidence).
 - **49,152 service**: probationary; steady-state watch required.
-- **C5** NUC11 warm standby: gated on the functional state machine.
+- **C5** NUC11 warm standby: gated on the functional state machine (mock
+  lifecycle proven 2026-10-03; standby build itself not started).
 - **C8** Slack HITL: approved in principle, deferred; NUC11 broker.
 - **C3** tunnel retarget: parked; owner-executed if requested.
 - **C1b** KV headroom/offload: requires a before/after tok/s receipt.
