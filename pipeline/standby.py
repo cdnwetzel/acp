@@ -83,6 +83,7 @@ def snapshot(src_ledger=state.LEDGER, out_dir=None):
         "rows": len(rows),
         "tail_seq": rows[-1]["seq"],
         "head": v["head"],
+        "lifecycle": state.lifecycle(src_ledger)["id"],  # F-08: receipts carry it
         "ledger_sha256": _sha256(src_ledger),
     }
     if out_dir is None:

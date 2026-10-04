@@ -75,6 +75,9 @@ def _append(rec):
     if missing:
         raise EnvelopeError(f"envelope {rec.get('record_type')} record missing "
                             f"required fields {missing}")
+    lc = state.lifecycle()["id"]  # owner ruling F-08: records carry lifecycle
+    if lc:
+        rec["lifecycle"] = lc
     schema = _load_schema(SCHEMA)
     try:
         _validate(schema, rec)

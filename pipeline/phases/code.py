@@ -29,7 +29,9 @@ def run(mock=False, worker=None, target_repo=None):
         diffs.append({"task": t["id"], "path": path, "criterion": t["criterion"],
                       "scope": t.get("scope", [f"mock/{t['id']}.txt"])})
     with open("artifacts/diff/manifest.json", "w") as f:
-        json.dump({"diffs": diffs}, f, indent=2)
+        from pipeline import state as _state
+        json.dump({"diffs": diffs,
+                   "lifecycle": _state.lifecycle()["id"]}, f, indent=2)
     return "artifacts/diff/manifest.json"
 
 def _restore_repo(target_repo, offenders):
@@ -128,5 +130,7 @@ def _run_pxx(target_repo):
         if os.path.exists(iso_path):
             os.remove(iso_path)
     with open("artifacts/diff/manifest.json", "w") as f:
-        json.dump({"diffs": diffs}, f, indent=2)
+        from pipeline import state as _state
+        json.dump({"diffs": diffs,
+                   "lifecycle": _state.lifecycle()["id"]}, f, indent=2)
     return "artifacts/diff/manifest.json"

@@ -17,7 +17,14 @@ def _approve_cli(tmp_path, *args, optimize=False):
                           env=_env(), cwd=tmp_path)
 
 def _open_gate(tmp_path, gate):
+    """Emit a gate_open with the gate's artifact present (the CLI binds the
+    decision to the artifact's bytes — it must exist)."""
+    art = {"intake": "artifacts/intake.json", "plan": "artifacts/plan.json",
+           "validate": "artifacts/validation.md"}[gate]
+    body = "{}" if art.endswith(".json") else "# v\nSIGN-OFF: pending\n"
     subprocess.run([sys.executable, "-c",
+                    f"import os; os.makedirs('artifacts', exist_ok=True); "
+                    f"open({art!r}, 'w').write({body!r}); "
                     f"from pipeline import state; state.emit({gate!r}, 'gate_open')"],
                    check=True, env=_env(), cwd=tmp_path)
 
@@ -67,3 +74,22 @@ def test_validation_survives_python_O(tmp_path):
     assert "human_" not in "".join(_events(tmp_path))
     r = _approve_cli(tmp_path, "plan", "approve", "legit", optimize=True)
     assert r.returncode == 0 and "human_approve" in _events(tmp_path)
+
+def test_decision_is_bound_to_artifact_bytes(tmp_path):
+    """M-4/ADV-015: the approval row carries the artifact hash."""
+    _open_gate(tmp_path, "plan")
+    r = _approve_cli(tmp_path, "plan", "approve", "reviewed")
+    assert r.returncode == 0
+    assert json.loads(r.stdout)["artifact_sha256"]
+
+def test_drifted_artifact_refused_at_decision(tmp_path):
+    """The artifact must be the bytes the gate opened on: runner opens the
+    gate (binding the hash), the artifact is then mutated, and the decision
+    must be refused until the gate re-opens on current content."""
+    subprocess.run([sys.executable, "-c",
+                    "from pipeline import runner; runner.run_all()"],
+                   check=True, env=_env(), cwd=tmp_path)  # -> gate_open:intake, hash-bound
+    (tmp_path / "artifacts/intake.json").write_text('{"changed": true}')
+    r = _approve_cli(tmp_path, "intake", "approve", "looks fine")
+    assert r.returncode == 2 and "drifted" in r.stderr
+    assert "human_approve" not in _events(tmp_path)

@@ -111,3 +111,85 @@ def test_unsealed_v1_row_fails(tmp_path, monkeypatch):
         f.write(json.dumps(v1) + "\n")
     v = state.verify_chain()
     assert not v["ok"] and any("unsealed v1" in e for e in v["errors"])
+
+
+# --- Repair program step 2: ledger authority (owner rulings 2026-10-04) ---
+
+def _legacy_row(i, event):
+    """A pre-chaining row (the live ledger's prefix shape: no prev_hash/hash)."""
+    return {"seq": i, "ts": "2026-10-03T00:00:00-0400", "run_id": "legacyrun12",
+            "phase": "intake", "event": event, "artifact": None, "detail": {}}
+
+def test_stripped_prev_hash_forgery_detected(tmp_path, monkeypatch):
+    """H-1/Codex-F-12: strip prev_hash from the first chained row, keep the
+    stored hash, edit content — the legacy branch must still recompute."""
+    monkeypatch.chdir(tmp_path)
+    for i in range(3):
+        state.emit("intake", f"e{i}", detail={"i": i})
+    rows = [json.loads(l) for l in open("state.jsonl")]
+    rows[0]["detail"] = {"i": "FORGED"}
+    del rows[0]["prev_hash"]
+    with open("state.jsonl", "w") as f:
+        for r in rows:
+            f.write(json.dumps(r) + "\n")
+    v = state.verify_chain()
+    assert not v["ok"] and any("forgery" in e for e in v["errors"])
+
+def test_seq_gap_detected(tmp_path, monkeypatch):
+    """Contiguous sequence numbers (owner seal ruling): a deleted middle row
+    fails even where linkage alone would miss it."""
+    monkeypatch.chdir(tmp_path)
+    for i in range(4):
+        state.emit("intake", f"e{i}")
+    rows = [json.loads(l) for l in open("state.jsonl")]
+    del rows[1]
+    with open("state.jsonl", "w") as f:
+        for r in rows:
+            f.write(json.dumps(r) + "\n")
+    assert not state.verify_chain()["ok"]
+
+def test_seal_legacy_migration_and_prefix_integrity(tmp_path, monkeypatch):
+    """Legacy-seal ruling: seal validates; any change to the prefix fails."""
+    monkeypatch.chdir(tmp_path)
+    with open("state.jsonl", "w") as f:
+        for i in range(2):
+            f.write(json.dumps(_legacy_row(i, f"owner_decision_{i}")) + "\n")
+    state.emit("intake", "started")  # first chained row
+    assert state.verify_chain()["ok"] and state.verify_chain()["legacy"] == 2
+    seal = state.seal_legacy()
+    assert seal["detail"]["legacy_rows"] == 2
+    assert state.verify_chain()["ok"]
+    with pytest.raises(state.ChainError, match="already sealed"):
+        state.seal_legacy()
+    # tamper: edit a sealed legacy row
+    rows = [json.loads(l) for l in open("state.jsonl")]
+    rows[0]["detail"] = {"decision": "FORGED"}
+    with open("state.jsonl", "w") as f:
+        for r in rows:
+            f.write(json.dumps(r) + "\n")
+    assert not state.verify_chain()["ok"]
+    # deletion of a legacy row fails (seq + seal)
+    rows = [json.loads(l) for l in open("state.jsonl")]  # (restore file first)
+    rows[0]["detail"] = {}
+    with open("state.jsonl", "w") as f:
+        for r in rows[1:]:
+            f.write(json.dumps(r) + "\n")
+    assert not state.verify_chain()["ok"]
+
+def test_torn_line_is_chainerror_not_raw_decode(tmp_path, monkeypatch):
+    """L-1/ADV-028: a torn final line bricks loudly with ChainError, never a
+    raw JSONDecodeError, and never silently passes."""
+    monkeypatch.chdir(tmp_path)
+    state.emit("intake", "started")
+    with open("state.jsonl", "a") as f:
+        f.write('{"seq": 1, "pha')
+    with pytest.raises(state.ChainError, match="torn"):
+        state.verify_chain()
+
+def test_trailing_blank_line_tolerated(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    state.emit("intake", "started")
+    with open("state.jsonl", "a") as f:
+        f.write("\n")
+    assert state.verify_chain()["ok"]
+    assert state.current_phase() == "intake"
