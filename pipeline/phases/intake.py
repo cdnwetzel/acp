@@ -35,9 +35,9 @@ _STRUCTURED_REHEARSAL = [
      "scope": "pipeline/state.py, pipeline/runner.py"},
 ]
 
-def run(mock=False, worker=None, problem=None):
+def run(mock=False, worker=None, problem=None, target_repo=None):
     if worker == "pxx":
-        return _run_pxx(problem)
+        return _run_pxx(problem, target_repo)
     if not mock:
         raise NotImplementedError("worker not wired for phase " + PHASE)
     os.makedirs("artifacts", exist_ok=True)
@@ -66,7 +66,7 @@ _CONVENTION = (
     "can be satisfied letter-correct but behaviorally fake is a FAILED "
     "criterion.")
 
-def _run_pxx(problem):
+def _run_pxx(problem, target_repo=None):
     from pipeline import endpoints, validate
     if not problem:
         raise WorkerError("real INTAKE requires an operator problem statement")
@@ -83,7 +83,8 @@ def _run_pxx(problem):
         '"acceptance_criteria" (array of strings, each "AC-n: ...").\n'
         + _CONVENTION + "\n"
         "--- OPERATOR BRIEF ---\n" + brief + "\n--- END BRIEF ---")
-    stdout = run_ask(ep, prompt, "artifacts/intake.transcript.log")
+    stdout = run_ask(ep, prompt, "artifacts/intake.transcript.log",
+                     cwd=target_repo)
     doc = extract_one_json(stdout)
     schema = validate.load(os.path.join("contracts", "intake.schema.json"))
     try:

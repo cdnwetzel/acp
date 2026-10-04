@@ -99,11 +99,15 @@ def extract_one_json(stdout):
             f"refusing to guess or repair")
     return objs[0]
 
-def run_ask(ep, prompt, transcript_path, budget_rounds="4", budget_seconds="600"):
+def run_ask(ep, prompt, transcript_path, budget_rounds="4", budget_seconds="600",
+            cwd=None):
     """One-shot governed `pxx ask` (no edit tools): isolation rewritten per
     invocation, PXX_* stripped, transcript recorded, loud on nonzero exit.
-    No retries — a failure is evidence, not something to paper over."""
-    iso_path = os.path.abspath("pxx.toml")
+    No retries — a failure is evidence, not something to paper over.
+    cwd: subprocess working directory (e.g. the target repo — pxx's clarity
+    gate probes referenced files relative to it). The transcript path stays
+    relative to the CALLING process (the pipeline sandbox)."""
+    iso_path = os.path.join(cwd or ".", "pxx.toml")
     argv = [pxx_bin(), "ask", "-m", prompt,
             "--model", ep["model"], "--base-url", ep["endpoint"],
             "--provider", ep.get("provider", "vllm"),
@@ -113,7 +117,8 @@ def run_ask(ep, prompt, transcript_path, budget_rounds="4", budget_seconds="600"
     try:
         with open(iso_path, "w") as f:  # pxx stashes repo-local config per invocation:
             f.write(ISOLATION_TOML)     # rewrite before EVERY ask
-        r = subprocess.run(argv, capture_output=True, text=True, env=pxx_env())
+        r = subprocess.run(argv, capture_output=True, text=True, env=pxx_env(),
+                           cwd=cwd or ".")
     finally:
         if os.path.exists(iso_path):
             os.remove(iso_path)

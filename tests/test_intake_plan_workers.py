@@ -21,7 +21,7 @@ def test_extract_one_json_multiple_is_loud():
         extract_one_json('{"a": 1} and also {"b": 2}')
 
 def _patched(monkeypatch, mod, stdout):
-    monkeypatch.setattr(mod, "run_ask", lambda ep, prompt, t: stdout)
+    monkeypatch.setattr(mod, "run_ask", lambda ep, prompt, t, **kw: stdout)
     monkeypatch.setattr(mod, "check_access", lambda ep: None)
 
 INTAKE_DOC = json.dumps({
@@ -75,3 +75,22 @@ def test_plan_no_partial_artifact_on_bad_output(tmp_path, monkeypatch):
     with pytest.raises(WorkerError, match="contract validation"):
         plan_phase.run(worker="pxx")
     assert not os.path.exists("artifacts/plan.json")
+
+def test_plan_rejects_invented_task_pre_write(tmp_path, monkeypatch):
+    """Failure class (plan drill 2026-10-04): the model appended a
+    suite-verification task with an invented criterion. The mechanical 1:1
+    check must refuse it BEFORE the artifact is written."""
+    monkeypatch.chdir(tmp_path)
+    os.makedirs("contracts")
+    import shutil
+    shutil.copy("/Users/cwetzel/ai/acp/contracts/plan.schema.json", "contracts/")
+    os.makedirs("artifacts")
+    json.dump({"acceptance_criteria": ["AC-1: x"]}, open("artifacts/intake.json", "w"))
+    ghost = json.dumps({"tasks": [
+        {"id": "TASK-1", "criterion": "AC-1: x", "deps": [], "scope": ["a.py"]},
+        {"id": "TASK-2", "criterion": "run the full test suite", "deps": ["TASK-1"],
+         "scope": ["test.log"]}]})
+    _patched(monkeypatch, plan_phase, ghost)
+    with pytest.raises(WorkerError, match="1:1"):
+        plan_phase.run(worker="pxx")
+    assert not os.path.exists("artifacts/plan.json")  # no partial artifact
