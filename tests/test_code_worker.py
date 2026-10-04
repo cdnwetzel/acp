@@ -60,3 +60,24 @@ def test_bad_endpoint_fails_closed_with_no_fallback(tmp_path):
     assert r.returncode != 0, "dead endpoint must fail"
     assert "falling back" not in out
     assert "spark" not in out.lower()
+
+def test_restore_repo_leaves_no_writes(tmp_path):
+    """Failed task = no residue (lifecycle drill 2026-10-04: scope-violating
+    worker left M calc.py + untracked test.log behind)."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    (repo / "calc.py").write_text("def add(a, b):\n    return a - b\n")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t",
+                    "commit", "-qm", "base"], cwd=repo, check=True)
+    (repo / "calc.py").write_text("def add(a, b):\n    return a + b\n")  # tracked edit
+    (repo / "test.log").write_text("fabricated evidence\n")               # untracked
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "reset", "-q"], cwd=repo, check=True)
+    code._restore_repo(str(repo), ["test.log"])
+    status = subprocess.run(["git", "status", "--short"], cwd=repo,
+                            capture_output=True, text=True).stdout.strip()
+    assert status == "", status
+    assert (repo / "calc.py").read_text() == "def add(a, b):\n    return a - b\n"
+    assert not (repo / "test.log").exists()

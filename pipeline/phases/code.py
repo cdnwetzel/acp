@@ -31,6 +31,16 @@ def run(mock=False, worker=None, target_repo=None):
         json.dump({"diffs": diffs}, f, indent=2)
     return "artifacts/diff/manifest.json"
 
+def _restore_repo(target_repo, offenders):
+    """Failed task leaves NO writes behind (lifecycle drill 2026-10-04: a
+    scope-violating task unstaged but left M/untracked residue): restore
+    tracked files and remove the untracked offenders the worker created."""
+    subprocess.run(["git", "checkout", "--", "."], cwd=target_repo,
+                   check=True, capture_output=True)
+    if offenders:
+        subprocess.run(["git", "clean", "-f", "--"] + list(offenders),
+                       cwd=target_repo, check=True, capture_output=True)
+
 def _run_pxx(target_repo):
     if not target_repo or not os.path.isdir(target_repo):
         raise WorkerError(f"pxx worker needs a valid target_repo, got: {target_repo!r}")
@@ -55,6 +65,10 @@ def _run_pxx(target_repo):
                       f"{task['id']}: {task['criterion']}\n"
                       f"Work only inside this repository, within your scope"
                       f" ({', '.join(scope) if scope else 'repo'}). "
+                      f"You implement the task; the pipeline produces the "
+                      f"evidence. NEVER create or modify evidence artifacts "
+                      f"(logs, test.log, reports) — your only deliverable is "
+                      f"the scoped change. "
                       f"Verify your change with the repo's tests if they exist.")
             argv = [pxx_bin(), "run", "-m", prompt,
                     "--model", ep["model"], "--base-url", ep["endpoint"],
@@ -83,9 +97,11 @@ def _run_pxx(target_repo):
             if offenders:
                 subprocess.run(["git", "reset", "-q"], cwd=target_repo,
                                check=True, capture_output=True)
+                _restore_repo(target_repo, offenders)
                 raise WorkerError(
                     f"{task['id']}: out-of-scope edits {offenders} "
-                    f"(scope: {scope}) — diff discarded, task failed loudly")
+                    f"(scope: {scope}) — diff discarded, repo restored, "
+                    f"task failed loudly")
             diff = subprocess.run(["git", "diff", "--cached"],
                                   capture_output=True, text=True, cwd=target_repo).stdout
             if not diff.strip():
