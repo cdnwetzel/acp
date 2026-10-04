@@ -10,8 +10,12 @@ def test_governed_phases_route_via_8004_proxy():
 
 def test_verify_routes_to_asrock():
     e = endpoints.resolve("verify")
-    assert e["endpoint"] == "http://10.0.1.115:8007"
+    # Explicit fallback (owner, 2026-10-04): :8007 probed — /health only, all
+    # API routes 404, not OpenAI-compatible. VERIFY shares the reviewer's
+    # Ollama stack for scoped drills; verifier!=author still enforced.
+    assert e["endpoint"] == "http://10.0.1.115:11434"
     assert e["access"] == "lan"
+    assert e["provider"] == "ollama"
 
 def test_test_and_validate_have_no_model_endpoint():
     assert endpoints.resolve("test")["endpoint"] is None

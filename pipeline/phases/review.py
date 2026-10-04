@@ -8,8 +8,8 @@ Output contract is gate-enforced: one ## TASK-n section per diff, every
 issue RESOLVED or WAIVED-with-reason.
 """
 import json, os, re, subprocess
-from pipeline.worker import (ISOLATION_TOML, WorkerError, check_access,
-                             pxx_bin, pxx_env)
+from pipeline.worker import (ISOLATION_TOML, WorkerError, assert_independence,
+                             check_access, pxx_bin, pxx_env)
 
 PHASE = "review"
 
@@ -29,19 +29,8 @@ def run(mock=False, worker=None, target_repo=None, reviewer=None):
     return "artifacts/review.md"
 
 def _assert_independence(ep, reviewer_name):
-    """Preflight: reviewer must differ from the CODE worker on model AND
-    endpoint AND runtime/provider — else the review is a governed
-    self-review, not independent evidence (owner requirement 2026-10-03)."""
-    from pipeline import endpoints
-    author = endpoints.resolve("code")
-    same = [k for k in ("model", "endpoint", "provider")
-            if author.get(k) and author.get(k) == ep.get(k)]
-    if same:
-        raise WorkerError(
-            f"reviewer '{reviewer_name}' is NOT independent of the CODE worker "
-            f"(shared: {', '.join(same)}) — refusing to run a self-review. "
-            f"Residual accepted risk even when distinct: all fleet models are "
-            f"Qwen-family, so vendor independence is incomplete by construction.")
+    """Reviewer independence — see pipeline.worker.assert_independence."""
+    assert_independence(ep, f"reviewer '{reviewer_name}'")
 
 def _dep_closure(task_id, plan):
     """Transitive dependency closure for a task, ordered breadth-first."""

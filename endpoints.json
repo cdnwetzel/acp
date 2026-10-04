@@ -41,10 +41,11 @@
     },
     "verify": {
       "worker": "asrock-verifier",
-      "endpoint": "http://10.0.1.115:8007",
+      "endpoint": "http://10.0.1.115:11434",
       "access": "lan",
+      "provider": "ollama",
       "model": "qwen2.5:14b-instruct-q4_k_m",
-      "note": "Judge/verifier on Asrock (health-verified 2026-10-03)."
+      "note": "EXPLICIT FALLBACK (owner decision 2026-10-04): documented :8007 route probed read-only — /health OK (backend ollama) but /v1/models, /v1/chat/completions, /api/tags, /api/chat ALL 404; request contract not OpenAI-compatible, unusable. VERIFY therefore shares model+host+stack with the independent REVIEWER (:11434 Ollama) — acceptable for scoped drills, NOT equivalent independence; verifier!=author still runtime-enforced. Retargeting :8007 is a separate owner decision."
     },
     "validate": {
       "worker": "human",

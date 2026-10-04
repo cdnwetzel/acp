@@ -46,6 +46,23 @@ def check_access(ep):
             f"The ssh local forward is absent — start it with:\n  {ep['forward']}\n"
             f"(the phase never starts it itself)")
 
+def assert_independence(ep, worker_name, author_phase="code"):
+    """Preflight: a judging worker (REVIEW/VERIFY) must differ from the CODE
+    worker on model AND endpoint AND runtime/provider — else it is a governed
+    self-assessment, not independent evidence (owner requirement 2026-10-03).
+    NOTE this does NOT assert reviewer!=verifier: sharing between judging
+    phases is an explicit owner decision recorded in endpoints.json + ledger."""
+    from pipeline import endpoints
+    author = endpoints.resolve(author_phase)
+    same = [k for k in ("model", "endpoint", "provider")
+            if author.get(k) and author.get(k) == ep.get(k)]
+    if same:
+        raise WorkerError(
+            f"{worker_name} is NOT independent of the CODE worker "
+            f"(shared: {', '.join(same)}) — refusing to run a self-assessment. "
+            f"Residual accepted risk even when distinct: all fleet models are "
+            f"Qwen-family, so vendor independence is incomplete by construction.")
+
 def scope_offenders(changed, scope):
     """Files changed outside a task's declared scope."""
     if not scope:
