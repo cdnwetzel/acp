@@ -50,7 +50,7 @@ def test_bad_endpoint_fails_closed_with_no_fallback(tmp_path):
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
     (repo / "pxx.toml").write_text(code.ISOLATION_TOML)
     r = subprocess.run(
-        ["pxx", "run", "-m", "noop",
+        [code._pxx_bin(), "run", "-m", "noop",
          "--model", "qwen3.8-27b", "--base-url", "http://127.0.0.1:1",
          "--provider", "vllm", "--budget-rounds", "1", "--budget-seconds", "60",
          "--no-memory"],

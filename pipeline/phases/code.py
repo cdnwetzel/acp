@@ -65,6 +65,17 @@ def _scope_offenders(changed, scope):
     return [f for f in changed
             if not any(f == s or f.startswith(s + "/") for s in prefixes)]
 
+def _pxx_bin():
+    """Locate the pxx executable — it is NOT reliably on PATH (C7 lesson:
+    miniforge/uv installs land in user dirs). Fail loudly if absent."""
+    import shutil
+    for cand in (shutil.which("pxx"),
+                 os.path.expanduser("~/miniforge3/bin/pxx"),
+                 os.path.expanduser("~/.local/bin/pxx")):
+        if cand and os.path.exists(cand):
+            return cand
+    raise WorkerError("pxx binary not found (checked PATH, ~/miniforge3/bin, ~/.local/bin)")
+
 def _run_pxx(target_repo):
     if not target_repo or not os.path.isdir(target_repo):
         raise WorkerError(f"pxx worker needs a valid target_repo, got: {target_repo!r}")
@@ -86,7 +97,7 @@ def _run_pxx(target_repo):
                       f"Work only inside this repository, within your scope"
                       f" ({', '.join(scope) if scope else 'repo'}). "
                       f"Verify your change with the repo's tests if they exist.")
-            argv = ["pxx", "run", "-m", prompt,
+            argv = [_pxx_bin(), "run", "-m", prompt,
                     "--model", ep["model"], "--base-url", ep["endpoint"],
                     "--provider", "vllm",
                     "--budget-rounds", "12", "--budget-seconds", "900",
