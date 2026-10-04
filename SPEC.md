@@ -6,6 +6,22 @@
 3. Workers receive only their input contract — never full pipeline state.
 4. Human approval events carry an explicit approve/deny + reason string.
 5. Distinguish config (intake) vs behavior (plan/code/test) vs consequence (verify/validate).
+6. Phases validate machine contracts BEFORE writing artifacts; gates re-check
+   after (mechanical pre-write checks, 2026-10-04: PLAN's 1:1 criteria check,
+   VERIFY's byte-for-byte criterion traceability). No partial artifacts.
+7. Worker transcripts pin worker identity: the exact isolation config and the
+   prompt sha256 are embedded in every transcript; a pxx-side stop is a
+   classified tooling stop (original rc, complete stderr), never a pass and
+   never silently retried.
+
+Role mapping (canonical cards in ../sdlc-agent-roles/): INTAKE=business-analyst,
+PLAN=tech-lead, CODE=backend-engineer, REVIEW=code-reviewer, TEST=sdet,
+VERIFY=qa-analyst, VALIDATE=release-manager+uat-coordinator (Anchored: Chris),
+orchestrator=platform-engineer.
+
+Status: step-5 full fresh lifecycle drill CLOSED 2026-10-04 (run 11 passed
+end-to-end, ledger row 58) — drill scope only; production VALIDATE remains
+human-only.
 
 ## Artifact contracts
 - `artifacts/intake.json` — problem, constraints, acceptance criteria, `required_imports` machine contract (`contracts/intake.schema.json`)

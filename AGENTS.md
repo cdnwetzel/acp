@@ -178,6 +178,13 @@ whose context reality is governed by live probes, not this table:
 | Warm standby (orchestrator) | Python stdlib | NUC11 |
 | Terminal | - | XPS 15 |
 
+Role mapping (sdlc-agent-roles cards, canonical in ../sdlc-agent-roles/;
+adopted 2026-10-04): INTAKE=`business-analyst`, PLAN=`tech-lead`,
+CODE=`backend-engineer`, REVIEW=`code-reviewer`, TEST=`sdet`,
+VERIFY=`qa-analyst`, VALIDATE=`release-manager`+`uat-coordinator`
+(Anchored — Chris decides), orchestrator=`platform-engineer`. ACP
+references role slugs; it never duplicates card text.
+
 ## Hard guardrails
 
 1. **No multi-node tensor/pipeline parallelism over LAN.** Largest contiguous
@@ -188,14 +195,15 @@ whose context reality is governed by live probes, not this table:
 4. **256GB RAM is a KV swap valve, not a serving tier.**
    Configure `--swap-space 16`. Never steady-state.
 5. **NUC11 mock-only** until ACP state machine and gates pass. No LLM wiring.
-   *(Met in mock form 2026-10-03. Scoped, drill-only lift for CODE recorded
-   as owner decision: pxx via governed :8004, operator-started forward,
-   fail-closed fallback (isolated pxx.toml + PXX_* strip), explicit scope
-   verification, sandbox, bounded execution, per-task transcript, ledger
-   evidence. All other phases remain mock. **REVIEW is the NEXT owner
-   decision — not an implied expansion**: it stays mocked until Chris
-   explicitly authorizes a second real-phase drill under the same
-   requirements.)*
+   *(Met in mock form 2026-10-03. Scoped, drill-only lift recorded as owner
+   decisions: pxx via governed :8004 (operator-started forward, fail-closed
+   isolated pxx.toml, PXX_* strip, explicit scope verification, sandbox,
+   bounded execution, per-task transcript) for CODE, INTAKE, PLAN; Asrock
+   Ollama :11434 qwen2.5:14b for REVIEW and VERIFY (independence
+   runtime-enforced; shared-stack caveat ledgered); real target-repo pytest
+   for TEST. VALIDATE remains HUMAN-ONLY. Proven in drill scope only —
+   step-5 full fresh lifecycle closed 2026-10-04 (run 11); no production-
+   readiness claim.)*
 6. **Do not install vLLM-Metal on the Mac mini** until the 16GB constraint is
    acknowledged. Docs recommend 36GB+ for larger models.
 7. **Do not attempt fp8 KV on A4500.** Ampere does not support it.
@@ -278,8 +286,44 @@ confirmed).
   divide from ops and exercises it, including a/b and zero-division
   ValueError". Historical drills keep their original criteria — NOT
   retroactive. Generalized into the four-part authoring convention
-  (behavior, subject, evidence source, scope); schema enforcement deferred
-  until INTAKE goes real; mock INTAKE rehearses criteria_structured.
+  (behavior, subject, evidence source, scope) and then SUPERSEDED as the
+  machine layer by the structured `required_imports` contract (below);
+  `criteria_structured` remains a mock rehearsal, schema enforcement of
+  the four-part prose still deferred.
+- **Step-5 lifecycle arc (CLOSED 2026-10-04, drill scope)**: full fresh
+  INTAKE→PLAN→CODE→REVIEW→TEST→VERIFY→VALIDATE lifecycle with real
+  workers passed end-to-end (run 11; ledger row 58; preserved bundle
+  lifecycle-fresh-20261004-153320). 11 runs; every stop was a fail-closed
+  layer working: 4 model defects caught (evidence fabrication, malformed
+  plan JSON, AC-prefix strip, VERIFY \u2014-escape corruption), prose-regex
+  validator class RETIRED after 4 phrasing borderlines (runs 1/3/5/9),
+  run 7 owner-ruled true positive, run 8 pxx clarity-gate tooling FP.
+  Corrections: 47dfdbb, 7e054a1, eadcf7f, fb0c3fd, pxx 86933588. Claim is
+  drill-scope only; production readiness is not claimed.
+- **Structured import contract (`required_imports`, 2026-10-04)**:
+  import/ownership requirements are a machine contract field in
+  intake.json, mechanically propagated to plan.json (orchestrator-stamped,
+  gate_plan rejects drift), and AST-verified at TEST into
+  artifacts/imports.json (owner defines symbol; static unaliased import;
+  no local copy/shadow/redefinition; dynamic imports never satisfy;
+  unparseable fails closed). Prose criteria are human context, never the
+  machine contract. Owner rulings: run 7 required explicit import-from-
+  owner language; run 9 ("must import … owned by ops.py") ruled
+  substantively compliant — validator FP #4, which retired the regex.
+- **pxx clarity gate (2026-10-04)**: pxx's ambiguity gate probes files
+  referenced in the prompt relative to the invocation cwd (run_ask passes
+  cwd=target_repo for this reason — the pxx cwd lesson). Creation-target
+  files legitimately absent from a pristine repo can trip it (run 8).
+  pxx 86933588 added `clarity_gate` (default ON; ACP's isolated pxx.toml
+  sets it false for single-shot no-tool contract-gated invocations; the
+  skip is recorded as a pxx gate_decision DISABLED_BY_CONFIG event and the
+  exact isolation config + prompt sha256 is embedded in every ACP worker
+  transcript). pxx-side stops are classified ClarityGateStop (original rc,
+  full stderr, prompt hash) — never a pass, never a silent retry.
+- **Mechanical pre-write checks pattern**: phases validate machine
+  contracts BEFORE writing artifacts; gates re-check after. Instances:
+  PLAN 1:1 criteria check (ghost-task class), VERIFY verbatim
+  byte-for-byte criterion traceability (escape-corruption class).
 - **49,152 service**: probationary; steady-state watch required.
 - **C5** NUC11 warm standby: gated on the functional state machine (mock
   lifecycle proven 2026-10-03; standby build itself not started).
