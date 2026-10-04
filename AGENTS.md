@@ -244,12 +244,15 @@ confirmed).
   drill must use a distinct model+stack (candidate: Asrock qwen2.5:14b
   via Ollama). True different-vendor review unavailable on HOME fleet
   (all Qwen-family; Nemotron parked).
-- **Next probe**: TEST phase as the next real phase — justified by the
-  multitask drill finding (2026-10-04): no phase ran the target repo's
-  tests, so a cross-task model defect (broken import) passed every gate
-  until the external check. Real TEST (target suite as gate evidence) is
-  the correction. Also registered: the 14B independent reviewer missed the
-  import defect — review contract needs related-task context.
+- **TEST phase**: real-phase status EARNED in drill scope (2026-10-04) —
+  executes the target repo's suite; proven by reproducing the import
+  defect into a gate_failed stop. NOT production readiness.
+- **Next design item**: dependency-aware REVIEW contract — the repeated
+  `divide`/`ops.py` import defect is preserved as a regression fixture
+  (tests/fixtures/TASK-3-broken-import.patch). Contract gains: dependency
+  closure, changed-file ownership/definitions, explicit cross-task
+  reconciliation; author transcript stays excluded. The next drill tests
+  this contract against the fixture defect.
   INTAKE/PLAN/VERIFY/VALIDATE stay mocked until per-phase preflight +
   Chris-authorized drill.
 - **49,152 service**: probationary; steady-state watch required.
