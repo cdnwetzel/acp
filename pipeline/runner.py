@@ -61,8 +61,15 @@ def run_all(workers=None, stop_after=None):
         try:
             GATE[phase]()
         except gates.GateError as e:
-            envelope.emit_gate(phase, "fail", str(e))
+            # Ledger FIRST — the gate_failed row is authoritative; an envelope
+            # emission failure must never suppress it (owner find 2026-10-04).
+            # The gate failure still surfaces as GateError, with any envelope
+            # failure chained as its cause.
             state.emit(phase, "gate_failed", detail={"error": str(e)})
+            try:
+                envelope.emit_gate(phase, "fail", str(e))
+            except envelope.EnvelopeError as ee:
+                raise gates.GateError(str(e)) from ee
             raise
         envelope.emit_gate(phase, "pass")
         state.emit(phase, "complete", artifact=artifact)

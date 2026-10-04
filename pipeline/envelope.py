@@ -203,16 +203,26 @@ def reconcile(artifacts_dir="artifacts"):
                     f"MISSING_ARTIFACT: {c['phase']} {c.get('task_id', '')}: {name} "
                     f"was absent at emit time ({h})")
                 continue
-            # artifact paths are sandbox-relative; the record stores names only,
-            # so integrity is re-verified against the current tree when the name
-            # resolves to a file under artifacts_dir
-            candidate = os.path.join(artifacts_dir, name)
-            if os.path.exists(candidate):
-                actual = hashlib.sha256(open(candidate, "rb").read()).hexdigest()
-                if actual != h:
-                    report["failures"].append(
-                        f"HASH_MISMATCH: {c['phase']} {name}: envelope {h[:16]}… "
-                        f"!= file {actual[:16]}…")
+            # artifact_hashes names are sandbox-relative ("artifacts/…") but
+            # reconcile() may run against any root — strip a leading
+            # "<basename>/" before joining (owner find 2026-10-04: the naive
+            # join produced "artifacts/artifacts/…", so hash re-verification
+            # NEVER fired). An artifact absent at reconcile time is an
+            # evidence failure, not a skip.
+            base = os.path.basename(os.path.normpath(artifacts_dir))
+            rel = name[len(base) + 1:] if name.startswith(base + os.sep) else name
+            candidate = os.path.join(artifacts_dir, rel)
+            if not os.path.exists(candidate):
+                report["failures"].append(
+                    f"UNVERIFIABLE_ARTIFACT: {c['phase']} {c.get('task_id', '')}: "
+                    f"{name} not present under {artifacts_dir} — recorded hash "
+                    f"cannot be re-verified")
+                continue
+            actual = hashlib.sha256(open(candidate, "rb").read()).hexdigest()
+            if actual != h:
+                report["failures"].append(
+                    f"HASH_MISMATCH: {c['phase']} {name}: envelope {h[:16]}… "
+                    f"!= file {actual[:16]}…")
     # 3. planned vs invoked capability must agree
     for c in calls:
         if c["planned_capability"] != c["invoked_capability"]:

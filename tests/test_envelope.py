@@ -100,6 +100,37 @@ def test_reconcile_hash_mismatch_fails(tmp_path, monkeypatch):
     assert not rep["ok"] and any("HASH_MISMATCH" in f for f in rep["failures"])
 
 
+def test_reconcile_reverifies_sandbox_relative_names(tmp_path, monkeypatch):
+    """Regression (owner find 2026-10-04): real callers record artifact names
+    WITH the "artifacts/" prefix; the naive join produced
+    "artifacts/artifacts/…", so hash re-verification never fired on real
+    records. Names must verify whether or not they carry the prefix."""
+    monkeypatch.chdir(tmp_path)
+    os.makedirs("artifacts/diff")
+    open("artifacts/diff/t.transcript.log", "w").write("transcript")
+    envelope.emit_run_manifest({"code": "pxx"})
+    envelope.emit_worker_call(**_call(
+        artifacts={"artifacts/diff/t.transcript.log": "artifacts/diff/t.transcript.log"}))
+    rep = envelope.reconcile()
+    assert rep["ok"], rep["failures"]  # matching hash verifies clean
+    open("artifacts/diff/t.transcript.log", "w").write("tampered")
+    rep = envelope.reconcile()
+    assert not rep["ok"] and any("HASH_MISMATCH" in f for f in rep["failures"])
+
+
+def test_reconcile_unverifiable_artifact_fails(tmp_path, monkeypatch):
+    """An artifact present at emit time but absent at reconcile time is an
+    evidence failure — never silently skipped."""
+    monkeypatch.chdir(tmp_path)
+    os.makedirs("artifacts")
+    open("artifacts/t.log", "w").write("transcript")
+    envelope.emit_run_manifest({"code": "pxx"})
+    envelope.emit_worker_call(**_call(artifacts={"artifacts/t.log": "artifacts/t.log"}))
+    os.remove("artifacts/t.log")
+    rep = envelope.reconcile()
+    assert not rep["ok"] and any("UNVERIFIABLE_ARTIFACT" in f for f in rep["failures"])
+
+
 def test_reconcile_capability_contradiction_fails(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _full_run(tmp_path)

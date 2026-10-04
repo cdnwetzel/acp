@@ -74,3 +74,32 @@ def test_review_gate_failure_stops_run_without_retry_or_damage(tmp_path, monkeyp
     assert _events("code") == ["started", "complete"]    # baseline intact
     assert not any(e == "started" for e in _events("test"))   # never reached
     assert not any(e == "started" for e in _events("verify"))
+
+def test_gate_failed_row_survives_envelope_failure(tmp_path, monkeypatch):
+    """Regression (owner find 2026-10-04): an EnvelopeError while recording a
+    gate failure must never suppress the authoritative gate_failed ledger
+    row; the failure still surfaces as GateError with the envelope error
+    chained as cause."""
+    monkeypatch.chdir(tmp_path)
+    assert runner.run_all() == "gate_open:intake"
+    _approve("intake")
+    assert runner.run_all() == "gate_open:plan"
+    _approve("plan")
+    import pipeline.phases.review as review_mod
+    real_run = review_mod.run
+    def sabotaged(**kw):
+        path = real_run(**kw)
+        open(path, "a").write("\n- issue: planted unresolved finding\n")
+        return path
+    monkeypatch.setattr(review_mod, "run", sabotaged)
+    from pipeline import envelope
+    real_emit = envelope.emit_gate
+    def boom(phase, result, detail=""):
+        if result == "fail":
+            raise envelope.EnvelopeError("append failed (planted)")
+        return real_emit(phase, result, detail)
+    monkeypatch.setattr(envelope, "emit_gate", boom)
+    with pytest.raises(gates.GateError) as ei:
+        runner.run_all()
+    assert _events("review") == ["started", "gate_failed"]  # ledger row present
+    assert isinstance(ei.value.__cause__, envelope.EnvelopeError)
