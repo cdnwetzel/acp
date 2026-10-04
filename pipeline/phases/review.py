@@ -9,7 +9,8 @@ issue RESOLVED or WAIVED-with-reason.
 """
 import json, os, re, subprocess
 from pipeline.worker import (ISOLATION_TOML, WorkerError, assert_independence,
-                             check_access, pxx_bin, pxx_env)
+                             check_access, classify_pxx_failure, pxx_bin,
+                             pxx_env, write_transcript)
 
 PHASE = "review"
 
@@ -127,15 +128,10 @@ def _run_pxx(target_repo, reviewer=None):
                     "--no-memory", "--sandbox"]
             r = subprocess.run(argv, capture_output=True, text=True,
                                cwd=cwd, env=pxx_env())
-            transcript = (f"$ {' '.join(argv)}\n[rc={r.returncode}]\n"
-                          f"--- stdout ---\n{r.stdout}\n--- stderr ---\n{r.stderr}")
-            with open(f"artifacts/diff/{d['task']}.review.transcript.log", "w") as f:
-                f.write(transcript)
+            tpath = f"artifacts/diff/{d['task']}.review.transcript.log"
+            write_transcript(tpath, argv, prompt, r)
             if r.returncode != 0:
-                raise WorkerError(
-                    f"pxx review failed for {d['task']} (rc={r.returncode}) — "
-                    f"see artifacts/diff/{d['task']}.review.transcript.log\n"
-                    f"stdout tail: {r.stdout[-1000:]}\nstderr tail: {r.stderr[-1000:]}")
+                raise classify_pxx_failure(prompt, r, tpath)
             findings = []
             for line in r.stdout.splitlines():
                 s = line.strip()

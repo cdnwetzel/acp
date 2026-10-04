@@ -7,7 +7,8 @@ contract: the plan tasks only — never full pipeline state (invariant 3).
 """
 import json, os, subprocess
 from pipeline.worker import (ISOLATION_TOML, WorkerError, check_access,
-                             pxx_bin, pxx_env, scope_offenders)
+                             classify_pxx_failure, pxx_bin, pxx_env,
+                             scope_offenders, write_transcript)
 
 PHASE = "code"
 
@@ -79,15 +80,10 @@ def _run_pxx(target_repo):
                 argv += ["--scope", ",".join(scope)]
             r = subprocess.run(argv, capture_output=True, text=True,
                                cwd=target_repo, env=pxx_env())
-            transcript = (f"$ {' '.join(argv)}\n[rc={r.returncode}]\n"
-                          f"--- stdout ---\n{r.stdout}\n--- stderr ---\n{r.stderr}")
-            with open(f"artifacts/diff/{task['id']}.transcript.log", "w") as f:
-                f.write(transcript)
+            tpath = f"artifacts/diff/{task['id']}.transcript.log"
+            write_transcript(tpath, argv, prompt, r)
             if r.returncode != 0:
-                raise WorkerError(
-                    f"pxx failed for {task['id']} (rc={r.returncode}) — "
-                    f"see artifacts/diff/{task['id']}.transcript.log\n"
-                    f"stdout tail: {r.stdout[-1000:]}\nstderr tail: {r.stderr[-1000:]}")
+                raise classify_pxx_failure(prompt, r, tpath)
             subprocess.run(["git", "add", "-A"], cwd=target_repo, check=True,
                            capture_output=True)
             changed = subprocess.run(["git", "diff", "--cached", "--name-only"],

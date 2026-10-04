@@ -10,10 +10,61 @@ ISOLATION_TOML = (
     "# ACP-managed run isolation. Empty fallback chain: a governed-phase failure\n"
     "# must fail CLOSED, never degrade to another endpoint (e.g. a work-side one).\n"
     "fallback_models = []\n"
+    "# clarity_gate = false (pxx 86933588, owner-approved 2026-10-04): ACP's pxx\n"
+    "# invocations are single-shot, no-tool, contract-gated — ACP supplies the\n"
+    "# fail-closed layers (schema validation, mechanical 1:1, extract_one_json,\n"
+    "# scope enforcement, real TEST, human gates), so pxx's ambiguity prompt only\n"
+    "# false-fires on legitimate creation-target references (lifecycle run 8,\n"
+    "# ledger row 54). The gate stays ON for interactive pxx use; pxx records the\n"
+    "# skip as a gate_decision event (DISABLED_BY_CONFIG), and every ACP worker\n"
+    "# transcript embeds this exact config as evidence. Disabling it here cannot\n"
+    "# widen scope, permissions, budgets, routing, or any downstream ACP gate.\n"
+    "clarity_gate = false\n"
 )
 
 class WorkerError(Exception):
     """Real-worker failure — loud, with the command's own output."""
+
+class ClarityGateStop(WorkerError):
+    """pxx stopped the task at its OWN ambiguity gate — a pxx-side tooling
+    stop, NOT a model verdict and NOT an ACP gate verdict (owner classification
+    rule, 2026-10-04). Never retried silently, never converted to a pass.
+    With clarity_gate=false in ISOLATION_TOML this should not occur; if it
+    does, treat it as config drift (e.g. a stale pxx binary that ignores the
+    key) and investigate before any rerun."""
+
+def prompt_hash(prompt):
+    """sha256 of the exact prompt sent — the worker-identity evidence anchor."""
+    import hashlib
+    return hashlib.sha256(prompt.encode()).hexdigest()
+
+def write_transcript(path, argv, prompt, r):
+    """Uniform worker transcript: the exact command, exit code, prompt hash,
+    the exact isolation config in force, and COMPLETE stdout+stderr."""
+    with open(path, "w") as f:
+        f.write(f"$ {' '.join(argv)}\n[rc={r.returncode}]\n"
+                f"[prompt_sha256={prompt_hash(prompt)}]\n"
+                f"--- isolation config (pxx.toml as written) ---\n{ISOLATION_TOML}"
+                f"--- stdout ---\n{r.stdout}\n--- stderr ---\n{r.stderr}")
+
+def classify_pxx_failure(prompt, r, transcript_path):
+    """Classify a nonzero pxx exit (owner condition 2026-10-04): preserve the
+    original exit code and complete stderr; a CLARIFICATION_REQUIRED stop is a
+    pxx tooling/clarity stop — classified with task/prompt identity, never a
+    pass, never silently retried. Anything else stays a loud generic
+    WorkerError. Returns the exception to raise."""
+    ph = prompt_hash(prompt)[:16]
+    if "[CLARIFICATION_REQUIRED]" in r.stdout:
+        question = (r.stdout.split("[CLARIFICATION_REQUIRED]", 1)[1]
+                    .split("(rounds=", 1)[0].strip())
+        return ClarityGateStop(
+            f"pxx CLARITY-GATE STOP (rc={r.returncode}, prompt_sha256={ph}): "
+            f"{question} — pxx-side tooling stop, not a model verdict; no "
+            f"retry, no repair. Complete stdout+stderr: {transcript_path}\n"
+            f"--- stderr (complete) ---\n{r.stderr}")
+    return WorkerError(
+        f"pxx failed (rc={r.returncode}, prompt_sha256={ph}) — see {transcript_path}\n"
+        f"stdout tail: {r.stdout[-1000:]}\nstderr tail: {r.stderr[-1000:]}")
 
 def pxx_bin():
     """Locate the pxx executable — it is NOT reliably on PATH (C7 lesson:
@@ -122,11 +173,7 @@ def run_ask(ep, prompt, transcript_path, budget_rounds="4", budget_seconds="600"
     finally:
         if os.path.exists(iso_path):
             os.remove(iso_path)
-    with open(transcript_path, "w") as f:
-        f.write(f"$ {' '.join(argv)}\n[rc={r.returncode}]\n"
-                f"--- stdout ---\n{r.stdout}\n--- stderr ---\n{r.stderr}")
+    write_transcript(transcript_path, argv, prompt, r)
     if r.returncode != 0:
-        raise WorkerError(
-            f"pxx ask failed (rc={r.returncode}) — see {transcript_path}\n"
-            f"stdout tail: {r.stdout[-1000:]}\nstderr tail: {r.stderr[-1000:]}")
+        raise classify_pxx_failure(prompt, r, transcript_path)
     return r.stdout

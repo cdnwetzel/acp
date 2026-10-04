@@ -10,7 +10,8 @@ non-empty ## Limitations section (evidence must state its own limits).
 """
 import json, os, re, subprocess
 from pipeline.worker import (ISOLATION_TOML, WorkerError, assert_independence,
-                             check_access, pxx_bin, pxx_env)
+                             check_access, classify_pxx_failure, pxx_bin,
+                             pxx_env, write_transcript)
 
 PHASE = "verify"
 
@@ -85,15 +86,9 @@ def _run_pxx(target_repo):
     finally:
         if iso_path and os.path.exists(iso_path):
             os.remove(iso_path)
-    transcript = (f"$ {' '.join(argv)}\n[rc={r.returncode}]\n"
-                  f"--- stdout ---\n{r.stdout}\n--- stderr ---\n{r.stderr}")
-    with open("artifacts/verify.transcript.log", "w") as f:
-        f.write(transcript)
+    write_transcript("artifacts/verify.transcript.log", argv, prompt, r)
     if r.returncode != 0:
-        raise WorkerError(
-            f"pxx verify failed (rc={r.returncode}) — "
-            f"see artifacts/verify.transcript.log\n"
-            f"stdout tail: {r.stdout[-1000:]}\nstderr tail: {r.stderr[-1000:]}")
+        raise classify_pxx_failure(prompt, r, "artifacts/verify.transcript.log")
     doc = _extract_document(r.stdout)
     if doc is None:
         raise WorkerError(
