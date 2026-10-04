@@ -43,6 +43,12 @@ def run_all(workers=None, stop_after=None):
     if not integrity["ok"]:
         raise state.ChainError(
             "refusing to run on a tampered ledger: " + "; ".join(integrity["errors"]))
+    from pipeline import envelope
+    # F-004 baseline: the DECLARED capability set for this run (phase -> worker
+    # kind), emitted before any work; reconciliation compares it against the
+    # observed worker_call records and produced artifacts.
+    envelope.emit_run_manifest({p: workers.get(p, {}).get("worker", "mock")
+                                for p in ORDER})
     rows = state.rows()
     for phase in ORDER:
         if _phase_complete(rows, phase):
@@ -55,8 +61,10 @@ def run_all(workers=None, stop_after=None):
         try:
             GATE[phase]()
         except gates.GateError as e:
+            envelope.emit_gate(phase, "fail", str(e))
             state.emit(phase, "gate_failed", detail={"error": str(e)})
             raise
+        envelope.emit_gate(phase, "pass")
         state.emit(phase, "complete", artifact=artifact)
         rows = state.rows()
         if stop_after and phase == stop_after:

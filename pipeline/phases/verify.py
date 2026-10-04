@@ -8,7 +8,7 @@ artifacts/verification.md. Output contract is gate-enforced: every
 acceptance criterion traced to a PASS verdict, no FAIL rows, and a
 non-empty ## Limitations section (evidence must state its own limits).
 """
-import json, os, re, subprocess
+import json, os, re, subprocess, time
 from pipeline.worker import (ISOLATION_TOML, WorkerError, assert_independence,
                              check_access, classify_pxx_failure, pxx_bin,
                              pxx_env, write_transcript)
@@ -91,12 +91,26 @@ def _run_pxx(target_repo):
         if iso_path:  # pxx stashes repo-local config per invocation (+stash):
             with open(iso_path, "w") as f:
                 f.write(ISOLATION_TOML)
+        t0 = time.monotonic()
         r = subprocess.run(argv, capture_output=True, text=True,
                            cwd=cwd, env=pxx_env())
     finally:
         if iso_path and os.path.exists(iso_path):
             os.remove(iso_path)
+    duration = time.monotonic() - t0
     write_transcript("artifacts/verify.transcript.log", argv, prompt, r)
+    from pipeline import envelope
+    envelope.emit_worker_call(
+        phase="verify", planned="pxx:ask", invoked="pxx:ask",
+        command=" ".join(argv), exit_status=r.returncode,
+        duration_s=duration, budgets={"rounds": "4", "seconds": "600"},
+        model=ep["model"], provider=ep.get("provider", "ollama"),
+        endpoint=ep["endpoint"], prompt=prompt, inputs=evidence,
+        output=r.stdout,
+        artifacts={"artifacts/verify.transcript.log": "artifacts/verify.transcript.log"},
+        runtime=envelope.pxx_version(), iso_config=ISOLATION_TOML,
+        limitations=[] if r.returncode == 0 else
+                    [f"nonzero exit rc={r.returncode} — classified, no retry"])
     if r.returncode != 0:
         raise classify_pxx_failure(prompt, r, "artifacts/verify.transcript.log")
     doc = _extract_document(r.stdout)

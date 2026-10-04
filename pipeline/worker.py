@@ -151,29 +151,62 @@ def extract_one_json(stdout):
     return objs[0]
 
 def run_ask(ep, prompt, transcript_path, budget_rounds="4", budget_seconds="600",
-            cwd=None):
+            cwd=None, phase=None, task_id=None):
     """One-shot governed `pxx ask` (no edit tools): isolation rewritten per
     invocation, PXX_* stripped, transcript recorded, loud on nonzero exit.
     No retries — a failure is evidence, not something to paper over.
     cwd: subprocess working directory (e.g. the target repo — pxx's clarity
     gate probes referenced files relative to it). The transcript path stays
-    relative to the CALLING process (the pipeline sandbox)."""
+    relative to the CALLING process (the pipeline sandbox).
+    Emits exactly one mandatory envelope record per invocation (every exit
+    path — a failed call is evidence too)."""
+    import subprocess, time
+    from pipeline import envelope
     iso_path = os.path.join(cwd or ".", "pxx.toml")
     argv = [pxx_bin(), "ask", "-m", prompt,
             "--model", ep["model"], "--base-url", ep["endpoint"],
             "--provider", ep.get("provider", "vllm"),
             "--budget-rounds", budget_rounds, "--budget-seconds", budget_seconds,
             "--no-memory", "--sandbox"]
-    import subprocess
+    t0 = time.monotonic()
     try:
         with open(iso_path, "w") as f:  # pxx stashes repo-local config per invocation:
             f.write(ISOLATION_TOML)     # rewrite before EVERY ask
-        r = subprocess.run(argv, capture_output=True, text=True, env=pxx_env(),
-                           cwd=cwd or ".")
+        try:
+            r = subprocess.run(argv, capture_output=True, text=True, env=pxx_env(),
+                               cwd=cwd or ".")
+            rc, out, err = r.returncode, r.stdout, r.stderr
+        except OSError:
+            rc, out, err = -1, "", "spawn failed"
+            r = None
     finally:
         if os.path.exists(iso_path):
             os.remove(iso_path)
+    duration = time.monotonic() - t0
+    if rc == -1:  # spawn failure: emit the evidence record, then fail loudly
+        envelope.emit_worker_call(
+            phase=phase or "code", task_id=task_id, planned="pxx:ask",
+            invoked="pxx:ask", command=" ".join(argv), exit_status=rc,
+            duration_s=duration, budgets={"rounds": budget_rounds,
+                                          "seconds": budget_seconds},
+            model=ep["model"], provider=ep.get("provider"),
+            endpoint=ep["endpoint"], prompt=prompt,
+            runtime=envelope.pxx_version(), iso_config=ISOLATION_TOML,
+            limitations=["spawn failure — never executed"])
+        raise WorkerError(f"pxx failed to spawn — see isolation/env; "
+                          f"envelope record emitted")
     write_transcript(transcript_path, argv, prompt, r)
+    envelope.emit_worker_call(
+        phase=phase or "code", task_id=task_id, planned="pxx:ask",
+        invoked="pxx:ask", command=" ".join(argv), exit_status=rc,
+        duration_s=duration,
+        budgets={"rounds": budget_rounds, "seconds": budget_seconds},
+        model=ep["model"], provider=ep.get("provider"),
+        endpoint=ep["endpoint"], prompt=prompt, output=out,
+        artifacts={transcript_path: transcript_path},
+        runtime=envelope.pxx_version(), iso_config=ISOLATION_TOML,
+        limitations=[] if rc == 0 else [f"nonzero exit rc={rc} — classified, "
+                                        f"no retry"])
     if r.returncode != 0:
         raise classify_pxx_failure(prompt, r, transcript_path)
     return r.stdout

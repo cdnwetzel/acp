@@ -23,6 +23,21 @@ Status: step-5 full fresh lifecycle drill CLOSED 2026-10-04 (run 11 passed
 end-to-end, ledger row 58) — drill scope only; production VALIDATE remains
 human-only.
 
+## Evidence envelope (owner-directed 2026-10-04, sidecar design (a))
+
+`artifacts/envelope.jsonl` — one mandatory, schema-validated record per real
+worker invocation (plus `run_manifest` and `gate` records), keyed by
+`run_id` + ledger head. Hashes only: no prompt bodies, source contents,
+diffs, or secrets. Emission is mandatory (invalid record or append failure
+raises) — NOT best-effort telemetry. `pipeline.envelope.reconcile()` is the
+deterministic F-004 report: declared workers (manifest) vs observed
+`worker_call` records vs produced artifacts; a missing, mismatched, or
+contradictory record is an evidence failure, never "not applicable".
+Operationally separate from the ledger and artifact contracts; preserved
+into the drill evidence bundle with the other artifacts. Deferred (b):
+promoting selected envelope fields into per-phase gate artifacts, only if
+reconciliation proves insufficient after several runs.
+
 ## Artifact contracts
 - `artifacts/intake.json` — problem, constraints, acceptance criteria, `required_imports` machine contract (`contracts/intake.schema.json`)
 - `artifacts/plan.json` — tasks decompose acceptance criteria 1:1; deps acyclic; `required_imports` propagated byte-identical from intake (`contracts/plan.schema.json`)

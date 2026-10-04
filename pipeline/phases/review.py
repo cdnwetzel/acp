@@ -7,7 +7,7 @@ pipeline state and the phase writes nothing but artifacts/review.md.
 Output contract is gate-enforced: one ## TASK-n section per diff, every
 issue RESOLVED or WAIVED-with-reason.
 """
-import json, os, re, subprocess
+import json, os, re, subprocess, time
 from pipeline.worker import (ISOLATION_TOML, WorkerError, assert_independence,
                              check_access, classify_pxx_failure, pxx_bin,
                              pxx_env, write_transcript)
@@ -126,10 +126,24 @@ def _run_pxx(target_repo, reviewer=None):
                     "--provider", ep.get("provider", "vllm"),
                     "--budget-rounds", "6", "--budget-seconds", "600",
                     "--no-memory", "--sandbox"]
+            t0 = time.monotonic()
             r = subprocess.run(argv, capture_output=True, text=True,
                                cwd=cwd, env=pxx_env())
+            duration = time.monotonic() - t0
             tpath = f"artifacts/diff/{d['task']}.review.transcript.log"
             write_transcript(tpath, argv, prompt, r)
+            from pipeline import envelope
+            envelope.emit_worker_call(
+                phase="review", task_id=d["task"], planned="pxx:ask",
+                invoked="pxx:ask", command=" ".join(argv),
+                exit_status=r.returncode, duration_s=duration,
+                budgets={"rounds": "6", "seconds": "600"},
+                model=ep["model"], provider=ep.get("provider", "vllm"),
+                endpoint=ep["endpoint"], prompt=prompt, output=r.stdout,
+                artifacts={tpath: tpath, d["path"]: d["path"]},
+                runtime=envelope.pxx_version(), iso_config=ISOLATION_TOML,
+                limitations=[] if r.returncode == 0 else
+                            [f"nonzero exit rc={r.returncode} — classified, no retry"])
             if r.returncode != 0:
                 raise classify_pxx_failure(prompt, r, tpath)
             findings = []

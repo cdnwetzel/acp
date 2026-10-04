@@ -98,7 +98,7 @@ def _run_pxx(problem, target_repo=None):
         + _CONVENTION + "\n" + _MACHINE_CONTRACT + "\n"
         "--- OPERATOR BRIEF ---\n" + brief + "\n--- END BRIEF ---")
     stdout = run_ask(ep, prompt, "artifacts/intake.transcript.log",
-                     cwd=target_repo)
+                     cwd=target_repo, phase="intake")
     doc = extract_one_json(stdout)
     schema = validate.load(os.path.join("contracts", "intake.schema.json"))
     try:

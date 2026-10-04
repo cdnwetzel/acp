@@ -5,7 +5,7 @@ auto-started), isolated fallback-free config, stripped env, explicit
 --scope plus post-diff scope verification, per-task transcript. Input
 contract: the plan tasks only — never full pipeline state (invariant 3).
 """
-import json, os, subprocess
+import json, os, subprocess, time
 from pipeline.worker import (ISOLATION_TOML, WorkerError, check_access,
                              classify_pxx_failure, pxx_bin, pxx_env,
                              scope_offenders, write_transcript)
@@ -78,10 +78,24 @@ def _run_pxx(target_repo):
                     "--no-memory", "--sandbox"]
             if scope:
                 argv += ["--scope", ",".join(scope)]
+            t0 = time.monotonic()
             r = subprocess.run(argv, capture_output=True, text=True,
                                cwd=target_repo, env=pxx_env())
+            duration = time.monotonic() - t0
             tpath = f"artifacts/diff/{task['id']}.transcript.log"
             write_transcript(tpath, argv, prompt, r)
+            from pipeline import envelope
+            envelope.emit_worker_call(
+                phase="code", task_id=task["id"], planned="pxx:run",
+                invoked="pxx:run", command=" ".join(argv),
+                exit_status=r.returncode, duration_s=duration,
+                budgets={"rounds": "12", "seconds": "900"},
+                model=ep["model"], provider="vllm", endpoint=ep["endpoint"],
+                prompt=prompt, output=r.stdout,
+                artifacts={tpath: tpath},
+                runtime=envelope.pxx_version(), iso_config=ISOLATION_TOML,
+                limitations=[] if r.returncode == 0 else
+                            [f"nonzero exit rc={r.returncode} — classified, no retry"])
             if r.returncode != 0:
                 raise classify_pxx_failure(prompt, r, tpath)
             subprocess.run(["git", "add", "-A"], cwd=target_repo, check=True,

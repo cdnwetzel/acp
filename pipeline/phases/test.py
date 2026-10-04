@@ -35,9 +35,21 @@ def _run_target(target_repo):
     cmd = [sys.executable, "-m", "pytest", ".", "-q"]
     t0 = time.monotonic()
     r = subprocess.run(cmd, capture_output=True, text=True, cwd=target_repo)
+    duration = time.monotonic() - t0
     log = _write_log(" ".join(cmd) + f" (cwd={target_repo})",
-                     r.returncode, time.monotonic() - t0, r.stdout, r.stderr)
+                     r.returncode, duration, r.stdout, r.stderr)
     _verify_required_imports(target_repo)
+    from pipeline import envelope
+    artifacts = {log: log}
+    if os.path.exists("artifacts/imports.json"):
+        artifacts["artifacts/imports.json"] = "artifacts/imports.json"
+    envelope.emit_worker_call(
+        phase="test", planned="pytest:local", invoked="pytest:local",
+        command=" ".join(cmd) + f" (cwd={target_repo})",
+        exit_status=r.returncode, duration_s=duration,
+        output=r.stdout, artifacts=artifacts,
+        limitations=[] if r.returncode == 0 else
+                    [f"nonzero exit rc={r.returncode} — gate_test decides"])
     return log
 
 def _verify_required_imports(target_repo):

@@ -58,7 +58,7 @@ def _run_pxx(target_repo=None):
         "smallest sensible task size.\n"
         "--- INTAKE ---\n" + json.dumps(intake, indent=2) + "\n--- END INTAKE ---")
     stdout = run_ask(ep, prompt, "artifacts/plan.transcript.log",
-                     cwd=target_repo)
+                     cwd=target_repo, phase="plan")
     doc = extract_one_json(stdout)
     # required_imports propagate MECHANICALLY from the intake (owner-directed
     # structured contract, 2026-10-04): the model authors the task list, the
