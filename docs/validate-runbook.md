@@ -1,8 +1,11 @@
 # VALIDATE Runbook — Human-Only Production-Shaped Validation
 
-Status: **DRAFT for owner review (2026-10-04).** This document authorizes no
-exercise. One witnessed validation exercise happens only after Chris approves
-this runbook, and is conducted against the approved text unchanged.
+Status: **APPROVED 2026-10-04 (owner review; corrections applied).** Owner
+review returned two P1 corrections (safely copyable approval command;
+hash-manifest staleness instead of mtime-only) and two P2 improvements
+(decision-event identity in the exercise row; operator identity in the
+receipt), all applied in this revision. Exactly one witnessed validation
+exercise is authorized, conducted against this approved text unchanged.
 
 Scope: the VALIDATE phase of one ACP lifecycle run. VALIDATE is human-only by
 construction — the phase produces a sign-off *document*; the decision is a
@@ -57,14 +60,14 @@ Reason text is required (the CLI rejects empty reasons) and must name the
 evidence reviewed, e.g.:
 
 ```
-approve "reviewed intake/plan/diff/review.md/test.log (EXIT_CODE: 0, N passed)/
-verification.md incl. Limitations/imports.json/envelope reconciliation;
-chain head <hash-prefix> verified"
+approve "reviewed intake/plan/diff/review.md/test.log (EXIT_CODE: 0, N passed)/verification.md incl. Limitations/imports.json/envelope reconciliation; chain head <hash-prefix> verified"
 ```
 
-Denials follow the same form with the blocking finding named. An approval or
-denial is irreversible: a wrong verdict is never edited — a `correction`
-ledger row naming the erroneous row's hash is appended instead.
+Type it as one physical line — the quoted reason string must not span lines
+and no shell continuation is used. Denials follow the same form with the
+blocking finding named. An approval or denial is irreversible: a wrong verdict
+is never edited — a `correction` ledger row naming the erroneous row's hash is
+appended instead.
 
 ## 3. Evidence bundle and ledger-head checks
 
@@ -85,8 +88,16 @@ Before the decision, the agent assembles and the operator verifies:
 6. Envelope: one `worker_call` record per real worker invocation, redacted
    command field (`<prompt_sha256:…>`), hashes only — no prompt bodies, no
    diffs, no secrets.
-7. Staleness: no artifact mtime newer than its gate's `complete` ledger row —
-   an artifact changed after its gate reopens that gate.
+7. Staleness (hash-bound): at each gate completion the agent captures a
+   SHA-256 manifest of that phase's artifacts —
+   `shasum -a 256 <artifact paths> > artifacts/sha256sums-<phase>.txt`
+   (`sha256sum` on the NUC11/Linux). Before the VALIDATE decision the agent
+   re-verifies every manifest with `shasum -a 256 -c
+   artifacts/sha256sums-<phase>.txt`; any mismatch means the artifact changed
+   after its gate — that gate is stale, the exercise aborts (§5). Artifact
+   mtime versus the gate's `complete` ledger row is kept as an early-warning
+   check only; it is never the authoritative check, because timestamps can be
+   preserved, coarse, or changed without proving content identity.
 
 ## 4. Production-shaped validation steps
 
@@ -134,7 +145,11 @@ Rollback, if a post-approval defect escapes:
    and the defect. History is never edited or deleted.
 3. Ledger state: restore from the verified standby snapshot per the C5
    recovery procedure (verified independently via `verify_chain()` after
-   restore; recovery is from the snapshot, never the head receipt alone).
+   restore; recovery is from the snapshot, never the head receipt alone). On
+   the NUC11 the interpreter and paths are explicit — chain verification:
+   `cd /home/cwetzel/acp-standby && PYTHONPATH=/home/cwetzel/ai/acp /home/cwetzel/acp-venv/bin/python -c 'from pipeline import state; print(state.verify_chain())'`;
+   a suite re-run there:
+   `cd /home/cwetzel/ai/acp && /home/cwetzel/acp-venv/bin/python -m pytest tests/ -q`.
 4. Target repo: `git revert` the candidate commits, or reset to the recorded
    base commit with the revert preferred on shared history; the rollback diff
    is itself scoped, reviewed, and ledgered as a new run if it is non-trivial.
@@ -167,9 +182,17 @@ After the decision (either verdict):
 2. Preserve the evidence bundle: run directory's `state.jsonl`, `artifacts/`,
    envelope, plus `run-config.txt` (commit, commands, versions), into
    `/tmp/acp-preserved/validate-<run>-<ts>/` with `SHA256SUMS.txt`.
-3. Agent records the exercise in the ledger: verdict, receipt head, bundle
-   path — as an `owner_decision`/exercise row quoting the operator's reason
-   text verbatim.
+3. Agent records the exercise in the ledger as an `owner_decision`/exercise
+   row containing: the verdict; the approval/denial event's ledger sequence
+   number and row hash (the human decision is directly traceable, not inferred
+   from row order); the receipt head; the bundle path; and the operator's
+   reason text quoted verbatim.
+4. The exercise receipt (bundle `run-config.txt`, or a sibling
+   `receipt.json`) records the approving operator's identity (Chris Wetzel),
+   the host the approval command was run on, and the approval-event identity
+   (ledger seq + row hash). This is owner attestation recorded as evidence —
+   it is not automated authentication, and it proves only what the operator
+   attests.
 
 ## 9. Ownership boundaries
 
