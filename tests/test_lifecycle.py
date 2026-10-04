@@ -29,13 +29,14 @@ def test_lifecycle_established_at_intake_and_carried(tmp_path, monkeypatch):
     assert state.lifecycle()["id"] == lid and not state.lifecycle()["done"]
 
 def test_completed_lifecycle_refuses_second_run(tmp_path, monkeypatch):
-    """F-08/P2b: a done lifecycle never reports an unbacked done."""
+    """F-08/P2b: a done lifecycle never reports an unbacked done — the refusal
+    is a distinct return value."""
     monkeypatch.chdir(tmp_path)
     _drive_to_done()
     assert state.lifecycle()["done"]
     state.RUN_ID = "differentprocess12"
-    with pytest.raises(runner.LifecycleError, match="already complete"):
-        runner.run_all()
+    result = runner.run_all()
+    assert result.startswith("lifecycle_complete:") and result != "done"
 
 def test_explicit_lifecycle_start_begins_a_new_lifecycle(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)

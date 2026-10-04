@@ -10,8 +10,9 @@ import hashlib, importlib, os, uuid
 from pipeline import gates, state
 
 class LifecycleError(RuntimeError):
-    """The ledger's lifecycle is already complete — a second run is refused
-    loudly; 'done' is never reported unbacked (owner ruling F-08, 2026-10-04)."""
+    """Lifecycle misuse (reserved; the done-refusal is a return value)."""
+
+DONE_PREFIX = "lifecycle_complete:"
 
 def _sha256_file(path):
     return hashlib.sha256(open(path, "rb").read()).hexdigest()
@@ -98,10 +99,10 @@ def run_all(workers=None, stop_after=None):
             "refusing to run on a tampered ledger: " + "; ".join(integrity["errors"]))
     lc = state.lifecycle()
     if lc["done"]:
-        raise LifecycleError(
-            f"lifecycle {lc['id']} is already complete — a second run on this "
-            f"ledger is refused; a new lifecycle needs a fresh ledger or an "
-            f"explicit lifecycle 'start' event (owner ruling F-08)")
+        # Loud refusal as a RETURN VALUE (never an unbacked "done", never a
+        # silent reuse — owner ruling F-08). A new lifecycle needs a fresh
+        # ledger or an explicit lifecycle 'start' event.
+        return DONE_PREFIX + str(lc["id"])
     from pipeline import envelope
     # F-004 baseline: the DECLARED capability set for this run (phase -> worker
     # kind), emitted before any work; reconciliation compares it against the
