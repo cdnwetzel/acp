@@ -1,11 +1,14 @@
 """INTAKE/PLAN real-worker unit surface: single-JSON extraction,
 validate-before-write, and the no-partial-artifact boundary.
 Live pxx invocation is drill scope; run_ask/check_access are patched here."""
-import json, os
+import json, os, shutil
+from pathlib import Path
 import pytest
 from pipeline.worker import WorkerError, extract_one_json
 from pipeline.phases import intake as intake_phase
 from pipeline.phases import plan as plan_phase
+
+CONTRACTS = Path(__file__).resolve().parent.parent / "contracts"
 
 def test_extract_one_json_happy():
     out = 'some prose\n```json\n{"problem": "x", "constraints": ["a"], "n": {"deep": 1}}\n```\ntrailer'
@@ -33,8 +36,7 @@ INTAKE_DOC = json.dumps({
 def test_intake_writes_only_validated_output(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     os.makedirs("contracts")
-    import shutil
-    shutil.copy("/Users/cwetzel/ai/acp/contracts/intake.schema.json", "contracts/")
+    shutil.copy(CONTRACTS / "intake.schema.json", "contracts/")
     _patched(monkeypatch, intake_phase, INTAKE_DOC)
     out = intake_phase.run(worker="pxx", problem="Upgrade the calc package.")
     assert out == "artifacts/intake.json"
@@ -44,8 +46,7 @@ def test_intake_writes_only_validated_output(tmp_path, monkeypatch):
 def test_intake_no_partial_artifact_on_bad_output(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     os.makedirs("contracts")
-    import shutil
-    shutil.copy("/Users/cwetzel/ai/acp/contracts/intake.schema.json", "contracts/")
+    shutil.copy(CONTRACTS / "intake.schema.json", "contracts/")
     _patched(monkeypatch, intake_phase, '{"problem": "x"}')  # missing required keys
     with pytest.raises(WorkerError, match="contract validation"):
         intake_phase.run(worker="pxx", problem="brief")
@@ -57,8 +58,7 @@ PLAN_DOC = json.dumps({"tasks": [
 def test_plan_writes_only_validated_output(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     os.makedirs("contracts")
-    import shutil
-    shutil.copy("/Users/cwetzel/ai/acp/contracts/plan.schema.json", "contracts/")
+    shutil.copy(CONTRACTS / "plan.schema.json", "contracts/")
     os.makedirs("artifacts")
     json.dump({"acceptance_criteria": ["AC-1: x"]}, open("artifacts/intake.json", "w"))
     _patched(monkeypatch, plan_phase, PLAN_DOC)
@@ -68,8 +68,7 @@ def test_plan_writes_only_validated_output(tmp_path, monkeypatch):
 def test_plan_no_partial_artifact_on_bad_output(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     os.makedirs("contracts")
-    import shutil
-    shutil.copy("/Users/cwetzel/ai/acp/contracts/plan.schema.json", "contracts/")
+    shutil.copy(CONTRACTS / "plan.schema.json", "contracts/")
     os.makedirs("artifacts")
     json.dump({"acceptance_criteria": ["AC-1: x"]}, open("artifacts/intake.json", "w"))
     _patched(monkeypatch, plan_phase, '{"tasks": [{"id": "WRONG", "criterion": "AC-1: x", "deps": [], "scope": ["a.py"]}]}')
@@ -83,8 +82,7 @@ def test_plan_rejects_invented_task_pre_write(tmp_path, monkeypatch):
     check must refuse it BEFORE the artifact is written."""
     monkeypatch.chdir(tmp_path)
     os.makedirs("contracts")
-    import shutil
-    shutil.copy("/Users/cwetzel/ai/acp/contracts/plan.schema.json", "contracts/")
+    shutil.copy(CONTRACTS / "plan.schema.json", "contracts/")
     os.makedirs("artifacts")
     json.dump({"acceptance_criteria": ["AC-1: x"]}, open("artifacts/intake.json", "w"))
     ghost = json.dumps({"tasks": [
