@@ -103,3 +103,66 @@ def test_gate_failed_row_survives_envelope_failure(tmp_path, monkeypatch):
         runner.run_all()
     assert _events("review") == ["started", "gate_failed"]  # ledger row present
     assert isinstance(ei.value.__cause__, envelope.EnvelopeError)
+
+# --- Human-gate integrity (repair program step 1, owner scope 2026-10-04) ---
+
+def test_no_gate_open_never_means_approved_stop_after(tmp_path, monkeypatch):
+    """C-1/ADV-001: stop_after on a gated phase must leave an explicitly
+    opened, resumable gate — never silently approved."""
+    monkeypatch.chdir(tmp_path)
+    assert runner.run_all(stop_after="intake") == "stopped_after:intake"
+    assert _events("intake") == ["started", "complete", "gate_open"]
+    assert runner.run_all() == "gate_open:intake"   # pending, NOT advanced
+    assert not any(e == "started" for e in _events("plan"))
+
+def test_crash_window_resume_opens_gate(tmp_path, monkeypatch):
+    """C-1: a crash between complete and gate_open leaves started+complete;
+    resume must open the gate and stop, never advance unapproved."""
+    monkeypatch.chdir(tmp_path)
+    import pipeline.phases.intake as intake_mod
+    intake_mod.run(mock=True)                      # artifact, no ledger rows
+    state.emit("intake", "started")
+    state.emit("intake", "complete", artifact="artifacts/intake.json")
+    assert runner.run_all() == "gate_open:intake"
+    assert _events("intake") == ["started", "complete", "gate_open"]
+    assert not any(e == "started" for e in _events("plan"))
+
+def test_validate_never_done_without_approval(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    assert runner.run_all() == "gate_open:intake"
+    _approve("intake")
+    assert runner.run_all() == "gate_open:plan"
+    _approve("plan")
+    assert runner.run_all() == "gate_open:validate"
+    assert runner.run_all() == "gate_open:validate"   # still parked
+    _approve("validate")
+    assert runner.run_all() == "done"
+
+def test_deny_is_terminal_and_supersedes_approval(tmp_path, monkeypatch):
+    """ADV-007/M-3: approve then deny = denied; deny then approve = denied.
+    Denial is irreversible within the gate window."""
+    monkeypatch.chdir(tmp_path)
+    assert runner.run_all() == "gate_open:intake"
+    _approve("intake")
+    state.emit("intake", "human_deny", detail={"reason": "revoking"})
+    assert runner.run_all() == "denied:intake"
+    _approve("intake", "second thoughts")            # late approve must not revive
+    assert runner.run_all() == "denied:intake"
+    assert not any(e == "started" for e in _events("plan"))
+
+def test_deny_only_is_distinct_from_pending(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    assert runner.run_all() == "gate_open:intake"    # pending
+    state.emit("intake", "human_deny", detail={"reason": "no"})
+    assert runner.run_all() == "denied:intake"       # distinct terminal state
+
+def test_fresh_gate_open_reopens_window_for_rereview(tmp_path, monkeypatch):
+    """Recovery path: a NEW gate_open row starts a new decision window —
+    history is never edited, the gate is simply re-opened."""
+    monkeypatch.chdir(tmp_path)
+    assert runner.run_all() == "gate_open:intake"
+    state.emit("intake", "human_deny", detail={"reason": "no"})
+    assert runner.run_all() == "denied:intake"
+    state.emit("intake", "gate_open", detail={"reason": "owner re-opened for re-review"})
+    _approve("intake", "approved on re-review")
+    assert runner.run_all() == "gate_open:plan"
