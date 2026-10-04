@@ -219,6 +219,26 @@ authorization, same as drills.
 - The prompt-injection set proves resistance to the injections we thought
   of. Novel injection surfaces are an ongoing authoring cost, assigned to
   the failure-to-invariant workflow.
+- **Owner-recorded limitation (2026-10-04, holdout review):** holdout
+  evidence currently covers one deterministic AST/import-ownership class
+  only; it does not establish generalization for injection, scope,
+  malformed-output, or clarity-stop classes.
+
+## 10. Holdout review disposition (owner, 2026-10-04)
+
+```
+Baseline stability: accepted (three runs at 2702439, byte-identical
+                    deterministic tier, zero variance)
+AST holdout evidence: accepted, scope-limited (both polarities, renamed
+                    worlds; ONE rule family only)
+Corpus status: evidence-only
+Gate promotion: deferred — the required-imports assertion is the strongest
+                future candidate, but requires at least one additional
+                unfamiliar-domain holdout for EACH polarity and a separate
+                owner decision before becoming gate material
+Promptfoo: deferred
+Live model-case execution: separately authorized work
+```
 
 ## 9. Design-review dispositions (2026-10-04)
 

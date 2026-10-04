@@ -5,8 +5,8 @@
       "case_set_sha256": "410e951233e5a795bfac10dcf3255746dc13b2eca36caa915e1ee21987e446ff",
       "corpus_sha256": "3201974a613205173857fdbd1e14ee78a64d06b705bbfd6eb1d57f220afe175c",
       "expected_outcome_sha256": "14f125cf4788f7c2da19038fd729412c87e045446572ed1bfea3a7380ffb1a51",
-      "manifest_sha256": "1453b46e92872a6f2412e0a5df4073a4bbf20c0fab8c77ace61f516b09df6e7b",
-      "source_commit": "e06b16b4266bbb36c2860b7aba9ac3ab985aac99"
+      "manifest_sha256": "e7e38ba9bc844027ef3170b1423007c1b54343d0519a1831204010fbfb21f6f6",
+      "source_commit": "2702439f52174a0395b298f17301ed4769bbf58a"
     }
   ]
 }

@@ -11,8 +11,8 @@ shipped". No area below is closed until its required evidence exists.
 | Area | Required evidence |
 |---|---|
 | C5 NUC11 standby | ~~Full mock lifecycle on NUC11, scripted approvals, ledger-head receipt, restart/resume test, no duplicate or divergent chain~~ **EVIDENCE COMPLETE 2026-10-04** (ledger row 66): venv hash-locked (`--require-hashes`, 5 pinned wheels); repo @`a0cc324`; suite 127/127 on NUC11; mock lifecycle done with scripted approvals (20-row chain valid); `pipeline/standby.py` snapshot+verified-receipt protocol live MacBook→NUC11 (head `676f2f1c` receipted); kill −9 mid-flight (rc=137, torn `test started`) resumed with no duplicate/divergent chain; simulated total loss recovered from the standby snapshot, restored chain verified independently and resumed to done |
-| Eval corpus | Harness, schema, leakage tests, regression replay, holdouts, and three stable baseline runs (design: docs/eval-corpus-design.md, dispositions ledgered rows 62–64) |
-| Eval promotion | Chris reviews holdout results and decides whether any deterministic assertion becomes a gate |
+| Eval corpus | ~~Harness, schema, leakage tests, regression replay, holdouts, and three stable baseline runs~~ **EVIDENCE COMPLETE 2026-10-04** (ledger rows 67–68): commit `2702439`; 18 cases, six classes; three runs byte-identical on the deterministic tier; baseline-2026-10 frozen with F-001 index/bundle split |
+| Eval promotion | **DEFERRED by owner 2026-10-04** (ledger row 69): holdout evidence covers only the AST/import-ownership class; promotion of the required-imports assertion requires ≥1 additional unfamiliar-domain holdout per polarity + a separate owner decision |
 | Evidence envelope | Several more real drills with preserved manifests, then a decision on sidecar → gate-artifact promotion |
 | Production VALIDATE | Human-only runbook, approval procedure, rollback procedure, one witnessed production-shaped validation |
 | Runtime reliability | Supervised `:8004` proven across restart/login/reboot; `49,152` stays probationary until steady-state evidence exists |
@@ -23,8 +23,8 @@ shipped". No area below is closed until its required evidence exists.
 ## Ship boundary (ordered)
 
 1. ~~C5 standby and recovery pass.~~ **PASS 2026-10-04** (ledger row 66) — awaiting no further evidence; closure recorded.
-2. Eval corpus implemented; three baseline runs stable.
-3. Holdout review completed.
+2. ~~Eval corpus implemented; three baseline runs stable.~~ **PASS 2026-10-04** (ledger rows 67–68).
+3. ~~Holdout review completed.~~ **DONE 2026-10-04, scope-limited acceptance** (ledger row 69).
 4. Human VALIDATE runbook exercised.
 5. Envelope and ledger restoration verified.
 6. Runtime and retrieval-security caveats recorded.
