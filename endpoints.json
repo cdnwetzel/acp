@@ -1,5 +1,5 @@
 {
-  "comment": "ACP endpoint manifest \u2014 the ONE resolver for phase->endpoint routing (plan section 9: one config resolver, never the environment). Endpoint selection is CONFIG; worker behavior stays behind contracts. Mock runners do not consult this file; only real workers do.",
+  "comment": "ACP endpoint manifest — the ONE resolver for phase->endpoint routing (plan section 9: one config resolver, never the environment). Endpoint selection is CONFIG; worker behavior stays behind contracts. Mock runners do not consult this file; only real workers do.",
   "phases": {
     "intake": {
       "worker": "governed-27b",
@@ -7,7 +7,8 @@
       "access": "ssh-local-forward",
       "forward": "ssh -N -L 8004:127.0.0.1:8004 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes chris@10.0.1.125",
       "model": "qwen3.8-27b",
-      "note": "D4: ACP -> labrouter :8004 (loopback on T5810) -> vllm :8007. Never raw LAN :8007. (base URL WITHOUT /v1 \u2014 pxx appends /v1/chat/completions itself; doubled /v1/v1 404s)"
+      "note": "D4: ACP -> labrouter :8004 (loopback on T5810) -> vllm :8007. Never raw LAN :8007. (base URL WITHOUT /v1 — pxx appends /v1/chat/completions itself; doubled /v1/v1 404s)",
+      "supervision": "launchd local.acp.forward-8004 (ops/launchd/local.acp.forward-8004.plist; probe: ops/forward-8004-status.sh) — operator infrastructure, KeepAlive; the pipeline still never starts the forward itself"
     },
     "plan": {
       "worker": "governed-27b",
@@ -15,7 +16,8 @@
       "access": "ssh-local-forward",
       "forward": "ssh -N -L 8004:127.0.0.1:8004 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes chris@10.0.1.125",
       "model": "qwen3.8-27b",
-      "note": "D4: governed path only. (base URL WITHOUT /v1 \u2014 pxx appends /v1/chat/completions itself; doubled /v1/v1 404s)"
+      "note": "D4: governed path only. (base URL WITHOUT /v1 — pxx appends /v1/chat/completions itself; doubled /v1/v1 404s)",
+      "supervision": "launchd local.acp.forward-8004 (ops/launchd/local.acp.forward-8004.plist; probe: ops/forward-8004-status.sh) — operator infrastructure, KeepAlive; the pipeline still never starts the forward itself"
     },
     "code": {
       "worker": "governed-27b",
@@ -23,7 +25,8 @@
       "access": "ssh-local-forward",
       "forward": "ssh -N -L 8004:127.0.0.1:8004 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes chris@10.0.1.125",
       "model": "qwen3.8-27b",
-      "note": "D4: governed path only. First real-worker candidate (pxx). (base URL WITHOUT /v1 \u2014 pxx appends /v1/chat/completions itself; doubled /v1/v1 404s)"
+      "note": "D4: governed path only. First real-worker candidate (pxx). (base URL WITHOUT /v1 — pxx appends /v1/chat/completions itself; doubled /v1/v1 404s)",
+      "supervision": "launchd local.acp.forward-8004 (ops/launchd/local.acp.forward-8004.plist; probe: ops/forward-8004-status.sh) — operator infrastructure, KeepAlive; the pipeline still never starts the forward itself"
     },
     "review": {
       "worker": "governed-27b",
@@ -31,7 +34,8 @@
       "access": "ssh-local-forward",
       "forward": "ssh -N -L 8004:127.0.0.1:8004 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes chris@10.0.1.125",
       "model": "qwen3.8-27b",
-      "note": "D4: governed path only. (base URL WITHOUT /v1 \u2014 pxx appends /v1/chat/completions itself; doubled /v1/v1 404s)"
+      "note": "D4: governed path only. (base URL WITHOUT /v1 — pxx appends /v1/chat/completions itself; doubled /v1/v1 404s)",
+      "supervision": "launchd local.acp.forward-8004 (ops/launchd/local.acp.forward-8004.plist; probe: ops/forward-8004-status.sh) — operator infrastructure, KeepAlive; the pipeline still never starts the forward itself"
     },
     "test": {
       "worker": "local",
@@ -71,7 +75,8 @@
       "forward": "ssh -N -L 8004:127.0.0.1:8004 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes chris@10.0.1.125",
       "provider": "vllm",
       "model": "qwen3.8-27b",
-      "note": "Same model as CODE \u2014 vacuous-gate risk; drill-only legacy."
+      "note": "Same model as CODE — vacuous-gate risk; drill-only legacy.",
+      "supervision": "launchd local.acp.forward-8004 (ops/launchd/local.acp.forward-8004.plist; probe: ops/forward-8004-status.sh) — operator infrastructure, KeepAlive; the pipeline still never starts the forward itself"
     },
     "asrock-independent": {
       "worker": "ollama-asrock",
@@ -79,7 +84,7 @@
       "access": "lan",
       "provider": "ollama",
       "model": "qwen2.5:14b-instruct-q4_k_m",
-      "note": "INTENTIONAL Asrock/Ollama route for independent-review drills (owner-accepted 2026-10-03): separate machine + serving stack (Ollama vs vLLM), preflight-asserted vs the CODE worker. Same fail-closed controls as governed phases (isolated pxx.toml rewritten per invocation, PXX_* stripped). Does NOT replace the documented :8007 verifier route \u2014 :8007's request contract is unprobed and its adoption is a separate owner decision."
+      "note": "INTENTIONAL Asrock/Ollama route for independent-review drills (owner-accepted 2026-10-03): separate machine + serving stack (Ollama vs vLLM), preflight-asserted vs the CODE worker. Same fail-closed controls as governed phases (isolated pxx.toml rewritten per invocation, PXX_* stripped). Does NOT replace the documented :8007 verifier route — :8007's request contract is unprobed and its adoption is a separate owner decision."
     }
   }
 }

@@ -325,6 +325,12 @@ confirmed).
   PLAN 1:1 criteria check (ghost-task class), VERIFY verbatim
   byte-for-byte criterion traceability (escape-corruption class).
 - **49,152 service**: probationary; steady-state watch required.
+- **:8004 forward supervision (2026-10-04)**: the SSH local forward died 3x
+  in one session, blocking unattended drills. Now supervised by launchd
+  (`local.acp.forward-8004`; canonical plist in `ops/launchd/`, probe
+  `ops/forward-8004-status.sh`). Supervision is operator infrastructure —
+  the pipeline still never starts the forward itself (`check_access` fails
+  closed when down). Restart-after-kill proven (6s resurrection).
 - **C5** NUC11 warm standby: gated on the functional state machine (mock
   lifecycle proven 2026-10-03; standby build itself not started).
 - **C8** Slack HITL: approved in principle, deferred; NUC11 broker.
