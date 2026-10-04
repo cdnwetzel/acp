@@ -22,7 +22,7 @@ diff's post-image directly is FALLBACK only: a partial hunk reconstructs as
 a fragment, not a file — a fragment that fails to parse fails closed, and a
 fragment that parses can silently miss imports (gate defect, drill 2026-10-04).
 """
-import ast, os
+import ast, hashlib, os
 
 class ImportLimitation(Exception):
     """The check cannot verify this construct — fail closed."""
@@ -152,36 +152,60 @@ def _diff_files(diff_text):
             for line in diff_text.splitlines()
             if line.startswith("diff --git") and " b/" in line]
 
-def _reviewed_trees(diff_text, target_repo):
-    """(fname, tree) for each file the reviewed diff touches. Repo content is
-    authoritative; post-image only when repo content is unavailable."""
+def _sha256(text):
+    return hashlib.sha256(text.encode()).hexdigest()
+
+def _parse_reviewed(diff_text, target_repo):
+    """(source_kind, evidence_entries, trees_or_None) for the reviewed diff.
+    Machine-generated provenance for the gate record (owner, 2026-10-04):
+    repo_post_code -> [{path, sha256, parse}]; post_image_fallback ->
+    [{patch_sha256, image_sha256, parse}]. parse is 'ok' or {error}."""
     files = _diff_files(diff_text)
     if target_repo and files and all(
             os.path.exists(os.path.join(target_repo, f)) for f in files):
-        return [(f, _tree(open(os.path.join(target_repo, f)).read(), f))
-                for f in files]
-    return [("reviewed diff", _tree(post_image(diff_text), "reviewed diff"))]
+        entries, trees = [], []
+        for f in files:
+            text = open(os.path.join(target_repo, f)).read()
+            entry = {"path": f, "sha256": _sha256(text)}
+            try:
+                trees.append((f, _tree(text, f)))
+                entry["parse"] = "ok"
+            except ImportLimitation as e:
+                entry["parse"] = {"error": str(e)}
+                entries.append(entry)
+                return "repo_post_code", entries, None
+            entries.append(entry)
+        return "repo_post_code", entries, trees
+    image = post_image(diff_text)
+    entry = {"patch_sha256": _sha256(diff_text), "image_sha256": _sha256(image)}
+    try:
+        tree = _tree(image, "reviewed diff")
+        entry["parse"] = "ok"
+    except ImportLimitation as e:
+        entry["parse"] = {"error": str(e)}
+        return "post_image_fallback", [entry], None
+    return "post_image_fallback", [entry], [("reviewed diff", tree)]
 
-def reviewed_source(diff_text, target_repo):
-    """Which source the mechanical check will parse — recorded in review.md so
-    the evidence states its own provenance (owner acceptance condition)."""
-    files = _diff_files(diff_text)
-    if target_repo and files and all(
-            os.path.exists(os.path.join(target_repo, f)) for f in files):
-        return f"repo ground truth ({', '.join(files)})"
-    return "diff post-image (fallback — repo content unavailable)"
-
-def check_imports(diff_text, plan, manifest, target_repo=None):
+def check_imports(diff_text, plan, manifest, target_repo=None, evidence=None):
     """Verify every `from module import name` in the reviewed diff resolves
-    via the ownership map. Returns (contradictions, limitations)."""
+    via the ownership map. Returns (contradictions, limitations). If an
+    `evidence` dict is passed, it is filled with the machine-generated
+    source/parse provenance (which source the check actually trusted)."""
     cache = {}
     contradictions, limitations = [], []
     ownership = {}
     for d in manifest["diffs"]:
         for f in d.get("scope") or []:
             ownership[f] = d["task"]
+    source, entries, trees = _parse_reviewed(diff_text, target_repo)
+    if evidence is not None:
+        evidence.clear()
+        evidence.update({"source": source, "files": entries})
+    if trees is None:  # parse failed — fail closed; error is in the evidence
+        for e in entries:
+            if isinstance(e.get("parse"), dict):
+                return [], [e["parse"]["error"]]
     try:
-        trees = _reviewed_trees(diff_text, target_repo)
         imports = []
         for _, tree in trees:
             imports.extend(_imports(tree))

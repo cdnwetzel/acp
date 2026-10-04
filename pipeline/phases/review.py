@@ -163,11 +163,18 @@ def _run_pxx(target_repo, reviewer=None):
                     f"required format — refusing to fabricate; see transcript")
             # Deterministic layer (owner, 2026-10-04): mechanical import
             # resolution — the reviewer's disposition cannot override it.
-            from pipeline.imports import check_imports, reviewed_source
-            contras, lims = check_imports(patch, plan, manifest, target_repo)
-            mechanical = [f"- mechanical import check source: {reviewed_source(patch, target_repo)}"]
-            mechanical += [f"- issue: {c} (mechanical import-resolution check)"
-                           for c in contras]
+            # Source/parse provenance is machine-generated gate evidence,
+            # not a reviewer claim: artifacts/diff/TASK-n.mechanical.json.
+            from pipeline.imports import check_imports
+            evidence = {}
+            contras, lims = check_imports(patch, plan, manifest, target_repo,
+                                          evidence=evidence)
+            with open(f"artifacts/diff/{d['task']}.mechanical.json", "w") as f:
+                json.dump({"task": d["task"], **evidence,
+                           "contradictions": contras, "limitations": lims}, f,
+                          indent=1)
+            mechanical = [f"- issue: {c} (mechanical import-resolution check)"
+                          for c in contras]
             mechanical += [f"- issue: limitation — {l} (mechanical check, fail-closed)"
                            for l in lims]
             lines += [f"## {d['task']}"] + findings + mechanical + [""]

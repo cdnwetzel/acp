@@ -64,12 +64,30 @@ def test_partial_hunk_without_repo_fails_closed(tmp_path):
     contras, lims = imports.check_imports(open(PARTIAL).read(), plan, manifest, None)
     assert any("unparseable Python" in l for l in lims), lims
 
-def test_reviewed_source_records_selection(tmp_path):
-    """The check's input provenance must be reportable (owner acceptance)."""
+def test_evidence_records_repo_source_with_hash(tmp_path):
+    """Machine-generated provenance (owner, 2026-10-04): the gate record shows
+    which source the check trusted — repo path + content hash + parse result."""
     plan, manifest, repo = _scenario(tmp_path)
-    patch = open(PARTIAL).read()
-    assert imports.reviewed_source(patch, repo) == "repo ground truth (calc.py)"
-    assert "post-image" in imports.reviewed_source(patch, None)
+    ev = {}
+    imports.check_imports(open(PARTIAL).read(), plan, manifest, repo, evidence=ev)
+    assert ev["source"] == "repo_post_code"
+    (entry,) = ev["files"]
+    assert entry["path"] == "calc.py" and entry["parse"] == "ok"
+    import hashlib
+    expected = hashlib.sha256(open(os.path.join(repo, "calc.py"), "rb").read()).hexdigest()
+    assert entry["sha256"] == expected
+
+def test_evidence_records_fallback_and_parse_error(tmp_path):
+    """Fallback evidence carries patch/image identifiers and the parse error."""
+    plan, manifest, repo = _scenario(tmp_path)
+    ev = {}
+    contras, lims = imports.check_imports(open(PARTIAL).read(), plan, manifest,
+                                          None, evidence=ev)
+    assert ev["source"] == "post_image_fallback"
+    (entry,) = ev["files"]
+    assert len(entry["patch_sha256"]) == 64 and len(entry["image_sha256"]) == 64
+    assert "unparseable Python" in entry["parse"]["error"]
+    assert any("unparseable Python" in l for l in lims)
 
 def test_reexport_satisfies_resolution(tmp_path):
     plan, manifest, repo = _scenario(tmp_path)

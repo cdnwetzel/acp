@@ -250,8 +250,10 @@ confirmed).
 - **Mechanical import-resolution layer (REVIEW)**: deterministic ast-based
   provenance gate, shipped 2026-10-04; reviewer disposition cannot override
   it. Reviewed-file imports read from repo ground truth (scope-isolation
-  invariant); diff post-image is fallback-only, fail-closed, and the
-  selected source is recorded in review.md. Regression fixtures:
+  invariant); diff post-image is fallback-only, fail-closed. Source/parse
+  provenance is machine-generated gate evidence per task
+  (artifacts/diff/TASK-n.mechanical.json: source kind, content hashes,
+  parse result/error) — never a reviewer claim in review.md. Regression fixtures:
   tests/fixtures/TASK-3-broken-import.patch (contradiction),
   TASK-1-partial-hunk.patch (gate-defect false positive).
   INTAKE/PLAN/VERIFY/VALIDATE stay mocked until per-phase preflight +
