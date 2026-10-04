@@ -50,8 +50,10 @@ README.md, SPEC.md
 ## Technology stack and build
 
 - **Python 3.14, stdlib only.** No third-party runtime dependencies; pytest is
-  the only dev dependency. There is no `pyproject.toml`, `requirements.txt`,
-  `setup.py`, or git repository yet — nothing to build or install.
+  the only dev dependency. There is no `pyproject.toml`, `requirements.txt`, or
+  `setup.py` — nothing to build or install. Version control: private repo
+  `cdnwetzel/acp` (initialized 2026-10-03); `state.jsonl` is gitignored —
+  the live ledger is operational state, not source.
 - Orchestrator runs on the Mac mini M4; NUC11 is the pytest/CI runner
   (mock-only until the state machine and gates pass — no LLM wiring).
 
