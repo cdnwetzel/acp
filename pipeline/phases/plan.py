@@ -1,9 +1,23 @@
-"""Phase: PLAN. Mock worker only — real workers are NOT wired (guardrail #5)."""
-import json
+"""Phase: PLAN. Mock worker by default; the pxx real worker is opt-in per run.
+
+Real path (worker="pxx", owner-authorized drill scope): the model AUTHORS
+the task decomposition — a behavior-authoring phase, human-gated (same-model
+authoring is acceptable; correctness judgment is not its job). Input
+contract is artifacts/intake.json ONLY. The worker never writes the
+artifact: stdout is captured, exactly one JSON object is extracted,
+schema-validated, and only then written by the orchestrator. One shot —
+no retries, no repair. The 1:1 decomposition and acyclicity invariants are
+gate-enforced after the write, unchanged.
+"""
+import json, os
+from pipeline.worker import (WorkerError, check_access, extract_one_json,
+                             run_ask)
 
 PHASE = "plan"
 
-def run(mock=False, scope_map=None):
+def run(mock=False, worker=None, scope_map=None):
+    if worker == "pxx":
+        return _run_pxx()
     if not mock:
         raise NotImplementedError("worker not wired for phase " + PHASE)
     intake = json.load(open("artifacts/intake.json"))
@@ -18,4 +32,33 @@ def run(mock=False, scope_map=None):
         prev = tid
     with open("artifacts/plan.json", "w") as f:
         json.dump({"tasks": tasks}, f, indent=2)
+    return "artifacts/plan.json"
+
+def _run_pxx():
+    from pipeline import endpoints, validate
+    ep = endpoints.resolve(PHASE)
+    check_access(ep)
+    intake = open("artifacts/intake.json").read()
+    prompt = (
+        "You are the PLAN worker. Decompose the specification below into "
+        "tasks. DO NOT call any tools — no shell, no file reads. Tool use "
+        "terminates the task.\n"
+        "Output EXACTLY ONE JSON object (no prose, no markdown fences): "
+        '{"tasks": [{"id": "TASK-1", "criterion": "<one acceptance criterion, '
+        'VERBATIM>", "deps": [], "scope": ["<file this task may touch>"]}, ...]}.\n'
+        "Rules: EXACTLY ONE task per acceptance criterion, criterion quoted "
+        "verbatim; every task gets a scope of the file(s) it may modify; deps "
+        "only on earlier TASK-n ids, acyclic; smallest sensible task size.\n"
+        "--- INTAKE ---\n" + intake + "\n--- END INTAKE ---")
+    stdout = run_ask(ep, prompt, "artifacts/plan.transcript.log")
+    doc = extract_one_json(stdout)
+    schema = validate.load(os.path.join("contracts", "plan.schema.json"))
+    try:
+        validate.validate(schema, doc)
+    except validate.ValidationError as e:
+        raise WorkerError(
+            f"PLAN output failed contract validation: {e} — refusing to "
+            f"write a non-conformant artifact (see artifacts/plan.transcript.log)")
+    with open("artifacts/plan.json", "w") as f:
+        json.dump(doc, f, indent=2)
     return "artifacts/plan.json"

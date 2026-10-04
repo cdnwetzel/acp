@@ -4,7 +4,7 @@ Both CODE and REVIEW real paths consume these so the governed-endpoint
 discipline lives in exactly one place (step-2 conditions, fail-closed
 fallback, explicit scope, C7 PATH lesson).
 """
-import os, socket
+import json, os, socket
 
 ISOLATION_TOML = (
     "# ACP-managed run isolation. Empty fallback chain: a governed-phase failure\n"
@@ -70,3 +70,58 @@ def scope_offenders(changed, scope):
     prefixes = [s.rstrip("/") for s in scope]
     return [f for f in changed
             if not any(f == s or f.startswith(s + "/") for s in prefixes)]
+
+def extract_one_json(stdout):
+    """Exactly one JSON object from worker stdout (owner adjustment
+    2026-10-04): the orchestrator validates and writes the artifact — the
+    worker never touches it. Zero, multiple, or ambiguous objects fail loud."""
+    candidates, depth, start = [], 0, None
+    for i, ch in enumerate(stdout):
+        if ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and start is not None:
+                candidates.append(stdout[start:i + 1])
+                start = None
+    objs = []
+    for c in candidates:
+        try:
+            objs.append(json.loads(c))
+        except json.JSONDecodeError:
+            pass
+    if len(objs) != 1:
+        raise WorkerError(
+            f"expected exactly one JSON object in worker output, found "
+            f"{len(objs)} ({len(candidates)} brace-balanced candidates) — "
+            f"refusing to guess or repair")
+    return objs[0]
+
+def run_ask(ep, prompt, transcript_path, budget_rounds="4", budget_seconds="600"):
+    """One-shot governed `pxx ask` (no edit tools): isolation rewritten per
+    invocation, PXX_* stripped, transcript recorded, loud on nonzero exit.
+    No retries — a failure is evidence, not something to paper over."""
+    iso_path = os.path.abspath("pxx.toml")
+    argv = [pxx_bin(), "ask", "-m", prompt,
+            "--model", ep["model"], "--base-url", ep["endpoint"],
+            "--provider", ep.get("provider", "vllm"),
+            "--budget-rounds", budget_rounds, "--budget-seconds", budget_seconds,
+            "--no-memory", "--sandbox"]
+    import subprocess
+    try:
+        with open(iso_path, "w") as f:  # pxx stashes repo-local config per invocation:
+            f.write(ISOLATION_TOML)     # rewrite before EVERY ask
+        r = subprocess.run(argv, capture_output=True, text=True, env=pxx_env())
+    finally:
+        if os.path.exists(iso_path):
+            os.remove(iso_path)
+    with open(transcript_path, "w") as f:
+        f.write(f"$ {' '.join(argv)}\n[rc={r.returncode}]\n"
+                f"--- stdout ---\n{r.stdout}\n--- stderr ---\n{r.stderr}")
+    if r.returncode != 0:
+        raise WorkerError(
+            f"pxx ask failed (rc={r.returncode}) — see {transcript_path}\n"
+            f"stdout tail: {r.stdout[-1000:]}\nstderr tail: {r.stderr[-1000:]}")
+    return r.stdout
