@@ -65,6 +65,59 @@ GPU hosts run inference only — no pxx on T5810/Asrock/3700X/Jetson.
 - dx-orchestrator patterns (evidence bundles, RL-003-style gating) are the
   reference; ACP keeps its own minimal gates.
 
+## 3a. Real-worker drills (drill scope only — no general readiness)
+
+Adopted from the REVIEW Independence Correction handoff (2026-10-04).
+
+**Evidence qualification (binding):** the original same-model CODE+REVIEW drill
+proves artifact production, gate validation, scope enforcement, and ledger/
+lifecycle behavior ONLY. It must not be presented as independent review
+correctness: *"REVIEW artifact and gate mechanics passed; independent review
+correctness was not demonstrated."* (Ledger correction row, 2026-10-03.)
+
+**Required REVIEW shape (met by current implementation):**
+- CODE on T5810 via governed `:8004`; REVIEW on Asrock qwen2.5:14b — separate
+  machine and serving stack (Ollama vs vLLM).
+- REVIEW receives only diff, manifest, and acceptance criteria — never author
+  transcript, summary, or pipeline state.
+- Runtime preflight (`review._assert_independence`) asserts model, endpoint,
+  and provider all differ; the default governed path is blocked from
+  self-review.
+- Residual risk recorded (ADR-002): all fleet models are Qwen-family —
+  vendor independence incomplete by construction.
+- **Recorded deviation:** the independent-review drill uses the intentional
+  Asrock/Ollama `:11434` route (pxx speaks Ollama-native), NOT the
+  documented `:8007` verifier route — `:8007`'s request contract is unprobed
+  and its adoption is a separate owner decision. The deviation retains
+  fail-closed and no-fallback behavior (isolated `pxx.toml` rewritten per
+  invocation, `PXX_*` stripped).
+
+**Contract/governance (met):** `verification.md` requires a non-empty
+`## Limitations` section enforced by `gate_verify`; same-host harness
+limitation recorded as ADR-001 (N=1 operational, NOT strong isolation).
+
+**Drill results:**
+- CODE-only drill (MacBook + NUC11): PASS (scoped lift, drill scope).
+- CODE+REVIEW same-model drill: mechanics PASS; independence NOT demonstrated
+  (relabeled).
+- Multitask drill (3-task CODE + independent REVIEW): INCOMPLETE — surfaced
+  three findings: (1) model authored a cross-task defect (TASK-3 test imports
+  `divide` from `calc` instead of `ops`); (2) the independent 14B reviewer
+  missed it — review contract needs related-task context, not a lone diff;
+  (3) **no phase ever ran the target repo's tests** — mock TEST runs
+  `test_state.py`, so artifact-content defects pass every gate. Finding (3)
+  is the formal argument for making TEST the next real phase; finding (2)
+  is a review-contract design note, not a prompt tweak.
+
+**Parked (not prerequisites):** cost-per-merged-change accounting,
+intake/spec-template refinement, OpenShell upgrade procedure.
+
+**Next drill requirements (from handoff):** one independent REVIEW drill with
+endpoint+model identities, independence preflight result, full transcripts,
+findings and RESOLVED/WAIVED dispositions, ledger chain and gate results,
+and explicit limitations incl. Qwen-family correlation risk — all recorded.
+No generalization beyond demonstrated phases and drill scope.
+
 ## 4. Scheduled evidence-gated changes (none executed by the agent)
 
 | # | Change | Executor | Evidence required after |
