@@ -78,7 +78,7 @@
       "access": "lan",
       "provider": "ollama",
       "model": "qwen2.5:14b-instruct-q4_k_m",
-      "note": "Independent reviewer: different model, host, AND serving stack (Ollama vs vLLM) \u2014 closes the author!=reviewer defect (sdlc invariant 1)."
+      "note": "INTENTIONAL Asrock/Ollama route for independent-review drills (owner-accepted 2026-10-03): separate machine + serving stack (Ollama vs vLLM), preflight-asserted vs the CODE worker. Same fail-closed controls as governed phases (isolated pxx.toml rewritten per invocation, PXX_* stripped). Does NOT replace the documented :8007 verifier route \u2014 :8007's request contract is unprobed and its adoption is a separate owner decision."
     }
   }
 }

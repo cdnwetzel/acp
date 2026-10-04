@@ -57,12 +57,13 @@ def _run_pxx(target_repo, reviewer=None):
     iso_path = None
     if target_repo and os.path.isdir(target_repo):
         iso_path = os.path.join(target_repo, "pxx.toml")
-        with open(iso_path, "w") as f:
-            f.write(ISOLATION_TOML)
     cwd = target_repo if iso_path else "."
     lines = ["# review.md", ""]
     try:
         for d in manifest["diffs"]:
+            if iso_path:  # pxx stashes repo-local config per invocation (+stash):
+                with open(iso_path, "w") as f:  # rewrite before EVERY ask
+                    f.write(ISOLATION_TOML)
             patch_abs = os.path.abspath(d["path"])
             patch = open(patch_abs).read()
             if len(patch) > 48000:  # ~12k tokens at 4 chars/tok; chunking is a later design
