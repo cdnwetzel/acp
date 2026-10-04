@@ -1,0 +1,22 @@
+{
+  "type": "object",
+  "required": [
+    "problem",
+    "constraints",
+    "acceptance_criteria"
+  ],
+  "properties": {
+    "problem": {
+      "type": "string",
+      "minLength": 10
+    },
+    "constraints": {
+      "type": "array",
+      "minItems": 1
+    },
+    "acceptance_criteria": {
+      "type": "array",
+      "minItems": 1
+    }
+  }
+}
