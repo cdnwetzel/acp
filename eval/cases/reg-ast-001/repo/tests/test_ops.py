@@ -1,0 +1,4 @@
+from ops import divide
+
+def test_divide():
+    assert divide(6, 2) == 3

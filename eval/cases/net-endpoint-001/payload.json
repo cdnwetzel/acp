@@ -1,0 +1,7 @@
+{
+  "endpoint_record": {
+    "endpoint": "http://127.0.0.1:59998/v1",
+    "access": "ssh-local-forward",
+    "forward": "ssh -N -L 59998:127.0.0.1:8004 chris@10.0.1.125"
+  }
+}

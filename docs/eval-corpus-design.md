@@ -1,7 +1,14 @@
 # Eval Corpus Design — ACP Worker Evaluation (evidence-only lane)
 
-Status: DRAFT for owner review (2026-10-04, item 3 of the owner's ordering).
-Design only — this document authorizes no implementation. Local-first: the
+Status: IMPLEMENTED 2026-10-04 as the evidence-only lane (owner order, same
+date): contracts/eval_case.schema.json + eval/corpus.py (schema + F-002/F-003
+semantics), eval/harness.py (executors, runner, baseline freeze/diff),
+eval/corpus.jsonl (18 seeded cases, all six classes), 16 tests in
+tests/test_eval_corpus.py. Model-dependent cases are recorded not_executed —
+live wiring is a separate owner-authorized step. No eval result is promoted
+into a required gate; promotion remains a separate owner decision per §6.
+
+Local-first: the
 corpus, harness, and results live on the HOME fleet. Promptfoo may appear as
 an adapter or disposable comparison lane, never an ACP dependency or gate
 authority. The corpus initially produces **evaluation evidence only**;

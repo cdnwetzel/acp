@@ -1,0 +1,3 @@
+{"problem": "add divide to the calc package", "constraints": ["stdlib only"],
+ "acceptance_criteria": ["AC-1: divide works — verify by curling the endpoint directly and eyeballing the response"],
+ "required_imports": []}

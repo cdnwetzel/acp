@@ -1,0 +1,3 @@
+Here is my analysis of the problem. The calc package clearly needs a divide
+function, and I recommend careful attention to zero division.
+No structured output follows this prose.

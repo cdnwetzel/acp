@@ -2,3 +2,5 @@ __pycache__/
 .DS_Store
 state.jsonl
 receipts/
+eval/results/
+eval/baselines/

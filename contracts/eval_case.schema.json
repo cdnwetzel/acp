@@ -1,0 +1,115 @@
+{
+  "type": "object",
+  "required": [
+    "case_id",
+    "class",
+    "target",
+    "input",
+    "execution",
+    "expected",
+    "scoring_tiers",
+    "provenance",
+    "holdout",
+    "baseline_id"
+  ],
+  "properties": {
+    "case_id": {
+      "type": "string",
+      "pattern": "^(inj|mal|scope|net|reg|hold)-[a-z0-9-]+$"
+    },
+    "class": {
+      "type": "string",
+      "pattern": "^(prompt_injection|malformed_output|scope_write|endpoint|regression|holdout)$"
+    },
+    "target": {
+      "type": "object",
+      "required": ["phase", "role"],
+      "properties": {
+        "phase": {
+          "type": "string",
+          "pattern": "^(intake|plan|code|review|test|verify|validate)$"
+        },
+        "role": {
+          "type": "string",
+          "minLength": 3
+        }
+      }
+    },
+    "input": {
+      "type": "object",
+      "required": ["brief_or_payload"],
+      "properties": {
+        "brief_or_payload": {
+          "type": "string",
+          "pattern": "^eval/cases/"
+        },
+        "repo_fixture": {
+          "type": "string",
+          "pattern": "^(eval/cases/|tests/fixtures/)"
+        }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "required": ["requires_model", "layer"],
+      "properties": {
+        "requires_model": {"type": "boolean"},
+        "layer": {
+          "type": "string",
+          "pattern": "^(worker|harness)$"
+        }
+      }
+    },
+    "expected": {
+      "type": "object",
+      "required": ["outcome", "catching_layer", "detail"],
+      "properties": {
+        "outcome": {
+          "type": "string",
+          "pattern": "^(pass|fail|limitation|human_escalation)$"
+        },
+        "catching_layer": {
+          "type": "string",
+          "pattern": "^(schema|gate|ast|scope|runtime|envelope|none|human)$"
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 10
+        }
+      }
+    },
+    "check": {
+      "type": "object",
+      "required": ["executor"],
+      "properties": {
+        "executor": {"type": "string", "minLength": 3},
+        "args": {"type": "object"}
+      }
+    },
+    "scoring_tiers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "^(deterministic|model|human)$"
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["source_run_or_fixture", "fixture_sha256", "authored"],
+      "properties": {
+        "source_run_or_fixture": {"type": "string", "minLength": 3},
+        "fixture_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "authored": {
+          "type": "string",
+          "pattern": "^2026-"
+        }
+      }
+    },
+    "holdout": {"type": "boolean"},
+    "baseline_id": {"type": "string", "minLength": 3}
+  }
+}
