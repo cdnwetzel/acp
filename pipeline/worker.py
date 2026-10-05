@@ -124,19 +124,54 @@ def pxx_env():
     return {k: v for k, v in os.environ.items() if not k.startswith("PXX_")}
 
 def check_access(ep):
-    """Verify a governed endpoint's access requirement (e.g. the ssh local
-    forward) — and NEVER start it ourselves (step-2 condition)."""
-    if ep.get("access") != "ssh-local-forward":
+    """Verify a governed endpoint's access requirement — and NEVER start it
+    ourselves (step-2 condition). L-16/ADV-025: every access class with an
+    endpoint gets a real probe; 'lan' probes the serving route over HTTP
+    (ollama /api/tags, others /v1/models), not a bare TCP connect."""
+    access = ep.get("access")
+    if access in (None, "local", "ledger"):
         return
-    host_port = ep["endpoint"].split("://", 1)[1].split("/")[0]
+    endpoint = ep.get("endpoint")
+    if not endpoint:
+        return
+    host_port = endpoint.split("://", 1)[1].split("/")[0]
     host, _, port = host_port.partition(":")
     try:
-        socket.create_connection((host, int(port or 80)), timeout=3).close()
-    except OSError as e:
+        port_i = int(port or 80)
+    except ValueError:
+        raise WorkerError(f"endpoint {endpoint!r} has a non-numeric port — "
+                          f"malformed manifest entry")
+    if access == "ssh-local-forward":
+        try:
+            socket.create_connection((host, port_i), timeout=3).close()
+        except OSError as e:
+            raise WorkerError(
+                f"governed endpoint unreachable at {ep['endpoint']} ({e}). "
+                f"The ssh local forward is absent — start it with:\n  {ep['forward']}\n"
+                f"(the phase never starts it itself)")
+        return
+    import urllib.error, urllib.request
+    path = "/api/tags" if ep.get("provider") == "ollama" else "/v1/models"
+    url = endpoint.rstrip("/") + path
+    try:
+        with urllib.request.urlopen(url, timeout=3) as resp:
+            status = resp.status
+    except urllib.error.HTTPError as e:
+        status = e.code
+    except (OSError, urllib.error.URLError) as e:
         raise WorkerError(
-            f"governed endpoint unreachable at {ep['endpoint']} ({e}). "
-            f"The ssh local forward is absent — start it with:\n  {ep['forward']}\n"
-            f"(the phase never starts it itself)")
+            f"governed endpoint unreachable at {url} ({e}) — fail closed; "
+            f"no silent fallback, no silent retry")
+    if status != 200:
+        raise WorkerError(f"governed endpoint {url} answered HTTP {status} — "
+                          f"not a healthy serving route; fail closed")
+
+def _norm_endpoint(e):
+    """Host-alias normalization (ADV-014): localhost and 127.0.0.1 are the
+    same loopback; config labels must not launder a shared stack."""
+    if not e:
+        return e
+    return e.replace("://localhost", "://127.0.0.1").rstrip("/")
 
 def assert_independence(ep, worker_name, author_phase="code"):
     """Preflight: a judging worker (REVIEW/VERIFY) must differ from the CODE
@@ -146,8 +181,17 @@ def assert_independence(ep, worker_name, author_phase="code"):
     phases is an explicit owner decision recorded in endpoints.json + ledger."""
     from pipeline import endpoints
     author = endpoints.resolve(author_phase)
+    # Effective values (M-16/ADV-014): the CODE path's provider default is
+    # vllm whether or not the manifest spells it out, and endpoint host
+    # aliases are normalized — labels must not launder a shared stack.
+    av = {"model": author.get("model"),
+          "endpoint": _norm_endpoint(author.get("endpoint")),
+          "provider": author.get("provider") or "vllm"}
+    cv = {"model": ep.get("model"),
+          "endpoint": _norm_endpoint(ep.get("endpoint")),
+          "provider": ep.get("provider") or "vllm"}
     same = [k for k in ("model", "endpoint", "provider")
-            if author.get(k) and author.get(k) == ep.get(k)]
+            if av[k] and av[k] == cv[k]]
     if same:
         raise WorkerError(
             f"{worker_name} is NOT independent of the CODE worker "

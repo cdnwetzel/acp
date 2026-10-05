@@ -78,6 +78,13 @@ def _append(rec):
     lc = state.lifecycle()["id"]  # owner ruling F-08: records carry lifecycle
     if lc:
         rec["lifecycle"] = lc
+    # Sidecar chain (ADV-012): every record after the first binds the previous
+    # raw line's hash — edits, deletions, and insertions are detectable.
+    if os.path.exists(ENVELOPE):
+        with open(ENVELOPE, "rb") as f:
+            prev_lines = f.read().splitlines()
+        if prev_lines:
+            rec["prev_record_sha256"] = hashlib.sha256(prev_lines[-1]).hexdigest()
     schema = _load_schema(SCHEMA)
     try:
         _validate(schema, rec)
@@ -170,25 +177,52 @@ def reconcile(artifacts_dir="artifacts"):
         return report
     records = []
     schema = _load_schema(SCHEMA)
-    for i, line in enumerate(open(path), 1):
-        if not line.strip():
-            continue
+    raw_lines = [l for l in open(path, "rb").read().splitlines() if l.strip()]
+    chained = unchained = 0
+    for i, raw in enumerate(raw_lines):
+        line = raw.decode("utf-8", errors="replace")
         try:
             rec = json.loads(line)
             _validate(schema, rec)
         except (json.JSONDecodeError, ValidationError) as e:
-            report["failures"].append(f"INTEGRITY: envelope line {i} invalid: {e}")
+            report["failures"].append(f"INTEGRITY: envelope line {i + 1} invalid: {e}")
             continue
+        # sidecar chain: record i>0 must bind the previous raw line (ADV-012)
+        if "prev_record_sha256" in rec:
+            chained += 1
+            if i == 0:
+                report["failures"].append("CHAIN: first record carries "
+                                          "prev_record_sha256 — head removed?")
+            elif rec["prev_record_sha256"] != hashlib.sha256(raw_lines[i - 1]).hexdigest():
+                report["failures"].append(f"CHAIN: record {i + 1} does not bind the "
+                                          f"previous line — edit/deletion/insertion")
+        else:
+            unchained += 1
+            if chained:
+                report["failures"].append(f"CHAIN: record {i + 1} lacks the chain "
+                                          f"field after chained records")
         records.append(rec)
     report["records"] = len(records)
-    manifests = [r for r in records if r["record_type"] == "run_manifest"]
+    all_manifests = [r for r in records if r["record_type"] == "run_manifest"]
     calls = [r for r in records if r["record_type"] == "worker_call"]
     gates = [r for r in records if r["record_type"] == "gate"]
+    # Manifest selection (ADV-012): the CURRENT lifecycle's manifest governs;
+    # multiple manifests within one lifecycle must agree, and an all-mock
+    # manifest must never launder a real run's missing records.
+    cur_lc = state.lifecycle()["id"]
+    manifests = [m for m in all_manifests
+                 if m.get("lifecycle") == cur_lc] or \
+                [m for m in all_manifests if "lifecycle" not in m]
+    declared = {}
     if not manifests:
         report["failures"].append("MISSING_MANIFEST: no run_manifest record — the "
                                   "declared capability set is unknown")
-        declared = {}
     else:
+        decls = {json.dumps(m.get("declared_workers", {}), sort_keys=True)
+                 for m in manifests}
+        if len(decls) > 1:
+            report["failures"].append("MANIFEST_DIVERGENCE: run_manifest records of "
+                                      "one lifecycle declare different capability sets")
         declared = manifests[-1].get("declared_workers", {})
     # 1. declared real phases must have >= 1 worker_call
     for phase, kind in sorted(declared.items()):
@@ -233,20 +267,55 @@ def reconcile(artifacts_dir="artifacts"):
                 f"CAPABILITY_CONTRADICTION: {c['phase']} {c.get('task_id', '')}: "
                 f"planned {c['planned_capability']} but invoked "
                 f"{c['invoked_capability']}")
-    # 4. every gate record must pass; a failed gate with any later gate is a
-    #    sequence violation (the runner stops on failure — later activity
-    #    contradicts it)
-    failed = [g for g in gates if g.get("gate_result") == "fail"]
-    if failed:
-        later = [g for g in gates if g["phase"] != failed[0]["phase"]
-                 and g["ts"] > failed[0]["ts"]]
-        if later:
+    # 3b. mock/real distinction: a gate pass for a phase declared REAL must be
+    #     backed by at least one worker_call — a mock run can never launder
+    #     real-phase evidence (ADV-012)
+    for g in gates:
+        if g.get("gate_result") == "pass" and declared.get(g["phase"]) not in \
+                (None, "mock") and not any(c["phase"] == g["phase"] for c in calls):
             report["failures"].append(
-                f"SEQUENCE: gate {failed[0]['phase']} failed but later gate "
-                f"records exist ({[g['phase'] for g in later]})")
+                f"GATE_WITHOUT_EVIDENCE: gate {g['phase']} passed but the phase was "
+                f"declared real ({declared[g['phase']]}) with no worker_call record")
+    # 4. gate sequencing (record ORDER, not timestamps — ts has only second
+    #    resolution): a failed gate followed by a later pass FOR THE SAME
+    #    phase is a legitimate retry (operator-driven). Later gate records
+    #    for OTHER phases after an unretried failure contradict the runner.
+    for gi, g in enumerate(gates):
+        if g.get("gate_result") != "fail":
+            continue
+        later = gates[gi + 1:]
+        if any(x["phase"] == g["phase"] and x.get("gate_result") == "pass"
+               for x in later):
+            continue  # legitimate fail-fix-rerun
+        later_other = [x for x in later if x["phase"] != g["phase"]]
+        if later_other:
+            report["failures"].append(
+                f"SEQUENCE: gate {g['phase']} failed without a later pass, but "
+                f"later gate records exist ({[x['phase'] for x in later_other]})")
+    # 5. ledger_head membership: every record's claimed ledger head must be a
+    #    real row hash of the ledger beside the artifacts dir (ADV-012) —
+    #    a stale or foreign envelope fails. A missing ledger is allowed only
+    #    when every record is pre-ledger (genesis head).
+    ledger_path = os.path.join(os.path.dirname(artifacts_dir), "state.jsonl")
+    ledger_hashes = {state.GENESIS_PREV}
+    ledger_present = os.path.exists(ledger_path)
+    if ledger_present:
+        try:
+            ledger_hashes |= {r.get("hash") for r in state.rows(ledger_path)}
+        except state.ChainError as e:
+            report["failures"].append(f"LEDGER: unreadable ledger beside envelope: {e}")
+    heads = {r.get("ledger_head") for r in records}
+    foreign = sorted(h for h in heads if h and h not in ledger_hashes)
+    if foreign and (ledger_present or heads != {state.GENESIS_PREV}):
+        report["failures"].append(
+            f"STALE_RECORD: {len(foreign)} distinct ledger_head value(s) are not "
+            f"row hashes of the ledger at {ledger_path} — stale or foreign envelope")
     report["checks"] = {"declared_real_phases": sorted(p for p, k in declared.items()
-                                                      if k != "mock"),
-                        "worker_calls": len(calls), "gate_records": len(gates)}
+                                                       if k != "mock"),
+                        "worker_calls": len(calls), "gate_records": len(gates),
+                        "sidecar_chain": ("verified" if chained and not unchained
+                                          else "absent-legacy" if not chained
+                                          else "BROKEN")}
     report["ok"] = not report["failures"]
     return report
 

@@ -286,13 +286,34 @@ def freeze(run_id, baseline_id, results_dir=RESULTS_DIR,
     return entry
 
 
-def diff(results_file, baseline_id, baselines_dir=BASELINES_DIR):
+def diff(results_file, baseline_id, baselines_dir=BASELINES_DIR, index_path=None):
     """Byte-deterministic comparison on the deterministic tier: same cases,
-    same expected outcomes, diff of observed deterministic scores."""
+    same expected outcomes, diff of observed deterministic scores.
+    The committed baseline INDEX is authoritative (F-001/L-17): the on-disk
+    manifest must hash to the indexed value and its case-set/expected-outcome
+    hashes must match before any comparison runs."""
     manifest_path = os.path.join(baselines_dir, baseline_id, "manifest.json")
     if not os.path.exists(manifest_path):
         raise HarnessError(f"no baseline manifest: {manifest_path}")
+    index_file = index_path or os.path.join(
+        os.path.dirname(baselines_dir.rstrip("/")), "baseline-index.json")
+    entry = None
+    if os.path.exists(index_file):
+        entry = next((b for b in json.load(open(index_file))["baselines"]
+                      if b["baseline_id"] == baseline_id), None)
+    if entry is None:
+        raise HarnessError(f"baseline {baseline_id} is not in the committed index "
+                           f"{index_file} — refusing to diff against an unindexed baseline")
+    actual = _sha256_file(manifest_path)
+    if actual != entry["manifest_sha256"]:
+        raise HarnessError(f"baseline manifest drifted from the committed index: "
+                           f"{actual[:16]}… != index {entry['manifest_sha256'][:16]}…")
     baseline = json.load(open(manifest_path))
+    for key, field in (("case_set", "case_set_sha256"),
+                       ("expected_outcomes", "expected_outcome_sha256")):
+        h = hashlib.sha256(_canonical(baseline[key]).encode()).hexdigest()
+        if h != entry[field]:
+            raise HarnessError(f"baseline {key} does not match the committed index")
     _, records = _read_results(results_file)
     current = {r["case_id"]: r["deterministic"] for r in records}
     current_cases = sorted(current)

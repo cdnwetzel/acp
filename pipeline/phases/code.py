@@ -135,7 +135,7 @@ def _run_pxx(target_repo):
                       f"Verify your change with the repo's tests if they exist.")
             argv = [pxx_bin(), "run", "-m", prompt,
                     "--model", ep["model"], "--base-url", ep["endpoint"],
-                    "--provider", "vllm",
+                    "--provider", ep.get("provider", "vllm"),
                     "--budget-rounds", "12", "--budget-seconds", "900",
                     "--no-memory", "--sandbox"]
             if scope:
@@ -152,7 +152,7 @@ def _run_pxx(target_repo):
                 invoked="pxx:run", command=" ".join(argv),
                 exit_status=r.returncode, duration_s=duration,
                 budgets={"rounds": "12", "seconds": "900"},
-                model=ep["model"], provider="vllm", endpoint=ep["endpoint"],
+                model=ep["model"], provider=ep.get("provider", "vllm"), endpoint=ep["endpoint"],
                 prompt=prompt, output=r.stdout,
                 artifacts={tpath: tpath},
                 runtime=envelope.pxx_version(), iso_config=ISOLATION_TOML,

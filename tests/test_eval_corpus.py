@@ -243,7 +243,8 @@ def test_baseline_freeze_and_byte_deterministic_diff(tmp_path):
                 "case_set_sha256", "expected_outcome_sha256", "manifest_sha256"):
         assert key in entry, key
     report = harness.diff(os.path.join(tmp_path / "res", r2["run_id"] + ".jsonl"),
-                          "baseline-test", baselines_dir=str(tmp_path / "base"))
+                          "baseline-test", baselines_dir=str(tmp_path / "base"),
+                          index_path=str(tmp_path / "index.json"))
     assert report["match"] is True and report["differences"] == []
     # tamper: a deterministic flip must be reported, never absorbed
     tampered = tmp_path / "tampered.jsonl"
@@ -253,7 +254,8 @@ def test_baseline_freeze_and_byte_deterministic_diff(tmp_path):
     lines[1] = json.dumps(rec) + "\n"
     tampered.write_text("".join(lines))
     report = harness.diff(str(tampered), "baseline-test",
-                          baselines_dir=str(tmp_path / "base"))
+                          baselines_dir=str(tmp_path / "base"),
+                          index_path=str(tmp_path / "index.json"))
     assert report["match"] is False and report["differences"]
 
 
