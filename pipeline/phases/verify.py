@@ -34,11 +34,15 @@ def run(mock=False, worker=None, target_repo=None):
     return "artifacts/verification.md"
 
 def _untraced_criteria(doc, acs):
-    """Criteria not quoted byte-for-byte in the document (verbatim
-    traceability — failure class, lifecycle run 10: the verifier emitted a
-    literal \\u2014 escape instead of the em dash; paraphrase-class
-    corruption must fail the phase BEFORE write)."""
-    return [a for a in acs if a not in doc]
+    """Criteria not traced by an EXACT first-cell match in the document's
+    verdict table (shares gates.verdict_rows with the post-write gate — owner
+    ruling 2026-10-04: one parser, one semantics). Failure classes: the
+    run-10 literal \\u2014 escape corruption, and the requalification bold-
+    wrapped criterion (`**AC-1: …**`) — decoration around a verbatim quote is
+    still a contract violation, caught BEFORE the artifact is written."""
+    from pipeline.gates import verdict_rows
+    traced = {cells[0] for cells in verdict_rows(doc)}
+    return [a for a in acs if a not in traced]
 
 def _run_pxx(target_repo):
     from pipeline import endpoints
@@ -77,10 +81,13 @@ def _run_pxx(target_repo):
         "Output contract, exactly:\n"
         "# verification.md\n\n"
         "| acceptance criterion | evidence | verdict |\n|---|---|---|\n"
-        "one row per criterion, quoting the criterion VERBATIM — BYTE-FOR-BYTE "
-        "as it appears below, with the exact original characters (never a "
-        "paraphrase, never a unicode escape sequence like \\u2014 in place of "
-        "the character itself), verdict PASS "
+        "one row per criterion, the FIRST cell containing ONLY the original "
+        "criterion text VERBATIM — BYTE-FOR-BYTE as it appears below, with the "
+        "exact original characters (never a paraphrase, never a unicode escape "
+        "sequence like \\u2014 in place of the character itself). NO markdown "
+        "emphasis or decoration in that cell — no **bold**, no `backticks`, no "
+        "labels, no bullets, nothing added or removed. Other cells may use "
+        "normal markdown. Verdict PASS "
         "or FAIL with the specific evidence relied on; then a '## Limitations' "
         "section stating honestly what this evidence does NOT prove "
         "(non-empty, specific — never perfunctory).\n"

@@ -190,6 +190,20 @@ def gate_test(log="artifacts/test.log", intake="artifacts/intake.json"):
             raise GateError("required-import AST verification failed: " + "; ".join(failed))
     return True
 
+def verdict_rows(txt):
+    """Parsed markdown table rows (cell lists) of a verification document —
+    the ONE criterion-cell parser, shared by the verify phase's pre-write
+    check and the post-write gate (owner ruling 2026-10-04: one
+    implementation, never two)."""
+    rows = []
+    for line in txt.splitlines():
+        s = line.strip()
+        if s.startswith("|") and s.endswith("|"):
+            cells = [c.strip() for c in s.strip("|").split("|")]
+            if len(cells) >= 3 and not all(set(c) <= set(":- ") for c in cells):
+                rows.append(cells)
+    return rows
+
 def gate_verify(v="artifacts/verification.md", intake="artifacts/intake.json"):
     """Cell-parsed verdicts, not substring tracing (M-9/ADV-010): a criterion
     is traced by a table row whose FIRST cell equals it exactly, and the LAST
@@ -198,13 +212,7 @@ def gate_verify(v="artifacts/verification.md", intake="artifacts/intake.json"):
     txt = open(v).read() if os.path.exists(v) else ""
     if not txt.strip():
         raise GateError("missing/empty verification.md")
-    rows = []
-    for line in txt.splitlines():
-        s = line.strip()
-        if s.startswith("|") and s.endswith("|"):
-            cells = [c.strip() for c in s.strip("|").split("|")]
-            if len(cells) >= 3 and not all(set(c) <= set(":- ") for c in cells):
-                rows.append(cells)
+    rows = verdict_rows(txt)
     for ac in _read(intake)["acceptance_criteria"]:
         matched = [c for c in rows if c[0] == ac]
         if not matched:

@@ -49,6 +49,22 @@ def test_untraced_criteria_catches_paraphrase():
     doc = "# verification.md\n\n| AC-1: the add fix works | test.log | PASS |\n"
     assert verify._untraced_criteria(doc, [AC]) == [AC]
 
+@pytest.mark.parametrize("decorated", [
+    f"**{AC}**",            # bold-wrapped (requalification stop, 2026-10-04)
+    f"`{AC}`",              # backtick-wrapped
+    f"Criterion: {AC}",     # prefixed label
+    AC.replace("—", "\\u2014"),  # unicode escape instead of the character
+])
+def test_untraced_criteria_catches_cell_decoration(decorated):
+    """The first cell must contain ONLY the criterion, byte-for-byte — the
+    pre-write check and the gate share one parser (owner ruling 2026-10-04)."""
+    doc = f"# verification.md\n\n| {decorated} | test.log | PASS |\n"
+    assert verify._untraced_criteria(doc, [AC]) == [AC]
+
+def test_untraced_criteria_genuinely_exact_passes():
+    doc = f"# verification.md\n\n| {AC} | test.log | PASS |\n"
+    assert verify._untraced_criteria(doc, [AC]) == []
+
 def test_run_pxx_refuses_to_write_non_traced_document(tmp_path, monkeypatch):
     """Phase-level: a corrupt-quoted document is refused BEFORE write — the
     artifact never lands, the error names the class."""
@@ -59,6 +75,28 @@ def test_run_pxx_refuses_to_write_non_traced_document(tmp_path, monkeypatch):
     json.dump({"diffs": []}, open("artifacts/diff/manifest.json", "w"))
     open("artifacts/review.md", "w").write("# review.md\n")
     bad_doc = "# verification.md\n\n| " + AC.replace("—", "\\u2014") + " | t | PASS |\n\n## Limitations\n\n- x\n"
+    import types
+    fake = types.SimpleNamespace(returncode=0, stdout="[COMPLETED]\n" + bad_doc, stderr="")
+    monkeypatch.setattr(verify.subprocess, "run", lambda *a, **kw: fake)
+    monkeypatch.setattr(verify, "assert_independence", lambda *a, **kw: None)
+    monkeypatch.setattr(verify, "check_access", lambda ep: None)
+    import pipeline.endpoints as endpoints
+    monkeypatch.setattr(endpoints, "resolve", lambda phase: EP)
+    with pytest.raises(WorkerError, match="verbatim traceability"):
+        verify.run(worker="pxx")
+    assert not os.path.exists("artifacts/verification.md")  # no partial artifact
+
+def test_run_pxx_refuses_decorated_criterion_before_write(tmp_path, monkeypatch):
+    """Phase-level (requalification stop, 2026-10-04): a bold-wrapped
+    criterion is refused BEFORE write — no partial artifact ever lands."""
+    monkeypatch.chdir(tmp_path)
+    os.makedirs("artifacts/diff")
+    json.dump({"acceptance_criteria": [AC]}, open("artifacts/intake.json", "w"))
+    open("artifacts/test.log", "w").write("COMMAND: pytest\nEXIT_CODE: 0\nDURATION_S: 1\n1 passed\n")
+    json.dump({"diffs": []}, open("artifacts/diff/manifest.json", "w"))
+    open("artifacts/review.md", "w").write("# review.md\n")
+    bad_doc = ("# verification.md\n\n| **" + AC + "** | t | PASS |\n\n"
+               "## Limitations\n\n- x\n")
     import types
     fake = types.SimpleNamespace(returncode=0, stdout="[COMPLETED]\n" + bad_doc, stderr="")
     monkeypatch.setattr(verify.subprocess, "run", lambda *a, **kw: fake)
