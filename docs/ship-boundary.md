@@ -1,10 +1,16 @@
 # Ship Boundary — ACP Roadmap (owner-defined, 2026-10-04)
 
 Status: governing owner document. The six-phase real lifecycle is PROVEN in
-drill scope (step-5 arc closed, run 11/12). What remains before the roadmap
-is shippable is continuity, operations, recovery, and production governance
-— the difference between "the factory works" and "the factory can be
-shipped". No area below is closed until its required evidence exists.
+drill scope (step-5 arc closed, run 11/12). The 2026-10-04 review+repair
+program (ledger rows 71–88) then hardened the substrate itself: three
+independent reviews + the owner's verification pass produced an exhaustive
+register (`docs/review-reconciliation-20261004.md`), and repair steps 1–7
+landed (human-gate integrity, ledger/approval authority with legacy seal and
+lifecycle identity, worker-failure correctness, strict gate parsers +
+import-layer hardening, worker boundary, evidence/recovery integrity,
+runbook/doc alignment). The Codex repro package went 5/24 → 24/24 against
+repaired HEAD. Current blocker: PLAN reliability (see "Interruptions" below).
+No area below is closed until its required evidence exists.
 
 ## Required evidence per area
 
@@ -25,10 +31,22 @@ shipped". No area below is closed until its required evidence exists.
 1. ~~C5 standby and recovery pass.~~ **PASS 2026-10-04** (ledger row 66) — awaiting no further evidence; closure recorded.
 2. ~~Eval corpus implemented; three baseline runs stable.~~ **PASS 2026-10-04** (ledger rows 67–68).
 3. ~~Holdout review completed.~~ **DONE 2026-10-04, scope-limited acceptance** (ledger row 69).
-4. Human VALIDATE runbook exercised.
-5. Envelope and ledger restoration verified.
+4. Human VALIDATE runbook exercised — **BLOCKED**: runbook approved with corrections (ledger 71); first witnessed exercise authorized and attempted, aborted pre-gate on two PLAN worker contract failures (ledger 72); repair program followed (steps 1–7, ledger 77–85); requalification battery ran 5/6 green with the lifecycle item paused (ledger 87) pending the PLAN correction (below). Requalification restart, then one witnessed exercise against the runbook.
+5. Envelope and ledger restoration verified — substantially evidenced (C5 kill −9, simulated loss, seal migration, reconcile hardening); re-confirm against the repaired code during requalification.
 6. Runtime and retrieval-security caveats recorded.
 7. Chris makes the final promotion decision.
+
+## Interruptions (open, blocking)
+
+- **PLAN reliability (ledger 87–88)**: three distinct PLAN contract defects
+  in four attempts. Diagnosis (`docs/plan-reliability-diagnosis-20261004.md`):
+  pxx's injected coding-agent system prompt (+9 tool schemas) is the
+  degradant — bare contract prompt 12/12 conformant vs 4/12 with the pxx
+  context; temperature, truncation, proxy, model, and ACP config ruled out.
+  Owner decision pending: pxx contract/bare mode (recommended) vs labrouter
+  route policy vs accept-the-rate. Requalification battery and the VALIDATE
+  exercise stay blocked until the correction lands with regression evidence
+  (isolation arms ~12/12, fresh lifecycle).
 
 ## Explicit deferrals (not silently forgotten)
 

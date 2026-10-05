@@ -96,8 +96,8 @@ python3 -m pipeline.approvals <gate> approve|deny "reason"
 # gates: intake | plan | validate
 ```
 
-**Current test status (2026-10-04, post repair program): 245 passed, 0
-failed** (`python3 -m pytest tests/ -q`). C6 (2026-10-03) landed hash-chaining;
+**Current test status (2026-10-05): 251 passed, 0 failed**
+(`python3 -m pytest tests/ -q`). C6 (2026-10-03) landed hash-chaining;
 the 2026-10-04 repair program added the legacy-prefix seal (row 78),
 lifecycle identity, hash-bound approvals, strict gate parsers, envelope
 chaining, and standby anti-rollback — each with regression tests.
@@ -307,11 +307,24 @@ program; steps 1–6 landed:
    provider independence with alias normalization; LAN endpoints probed
    over HTTP; eval diff consumes the committed baseline index.
 
+7. Runbook + documentation alignment (2026-10-04, ledger 85): runbook amended
+   to the repaired code without weakening it (HUMAN_GATE_BYPASSED became a
+   reconcile check); AGENTS/SPEC/README stale claims corrected.
+8. Requalification battery + PLAN diagnosis (ledger 86–88): battery ran 5/6
+   green; the VERIFY decoration stop became a contract-gap fix (shared
+   criterion-cell parser, ledger 86); the lifecycle item was paused by owner
+   decision (ledger 87); diagnosis identified pxx's injected coding-agent
+   system prompt (+9 tool schemas) as the PLAN degradant — bare prompt 12/12
+   vs 4/12 with pxx context (`docs/plan-reliability-diagnosis-20261004.md`,
+   ledger 88). Correction choice is the open owner decision; VALIDATE stays
+   blocked until regression evidence + battery restart.
+
 Acceptance meter: the Codex repro package went from 5/24 to 24/24 passing
 against repaired HEAD, including its end-to-end gate_test injection.
 The first witnessed VALIDATE exercise (authorized, then aborted pre-gate on
 two PLAN contract failures) is NOT re-authorized; requalification (program
-step 8) precedes any new exercise.
+step 8) precedes any new exercise. External review evidence preserved
+in-repo at `docs/evidence/review-20261004/`.
 
 ## Open / parked register (must stay visible — not closed findings)
 

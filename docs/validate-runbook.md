@@ -1,16 +1,18 @@
 # VALIDATE Runbook — Human-Only Production-Shaped Validation
 
 Status: **APPROVED 2026-10-04 (owner review; corrections applied); amended
-2026-10-04 after the repair program (steps 1–6) to match the repaired code.**
-Owner review returned two P1 corrections (safely copyable approval command;
-hash-manifest staleness instead of mtime-only) and two P2 improvements
-(decision-event identity in the exercise row; operator identity in the
-receipt), all applied. The first witnessed exercise was authorized and
-attempted; it aborted pre-gate on two PLAN worker contract failures (ledger
-72). The subsequent three-way review (orchestrator + baseline + adversarial +
-Codex repro package) found the substrate defects this amendment reflects.
-Re-authorization of a fresh exercise awaits the step-8 requalification
-battery.
+2026-10-04 after repair steps 1–6, and again after step 7 alignment plus the
+requalification battery.** Owner review returned two P1 corrections (safely
+copyable approval command; hash-manifest staleness instead of mtime-only)
+and two P2 improvements (decision-event identity in the exercise row;
+operator identity in the receipt), all applied. The first witnessed exercise
+was authorized and attempted; it aborted pre-gate on two PLAN worker
+contract failures (ledger 72). The subsequent three-way review (orchestrator
++ baseline + adversarial + Codex repro package) found the substrate defects
+the step 1–6 amendments reflect. The requalification battery then ran 5/6
+green; its lifecycle item is paused pending the PLAN correction
+(`docs/plan-reliability-diagnosis-20261004.md`, ledger 87–88).
+Re-authorization of a fresh exercise awaits the completed battery.
 
 Scope: the VALIDATE phase of one ACP lifecycle run. VALIDATE is human-only by
 construction — the phase produces a sign-off *document*; the decision is a
