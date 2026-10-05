@@ -7,7 +7,7 @@
       "minItems": 1,
       "items": {
         "type": "object",
-        "required": ["id", "criterion", "deps"],
+        "required": ["id", "criterion", "deps", "scope"],
         "properties": {
           "id": { "type": "string", "pattern": "^TASK-[0-9]+$" },
           "criterion": { "type": "string", "minLength": 1 },

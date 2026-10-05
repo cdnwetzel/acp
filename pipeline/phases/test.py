@@ -11,11 +11,30 @@ import json, os, subprocess, sys, time
 PHASE = "test"
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+def _parse_skips(out):
+    """Skip identities + reasons from pytest's structured short summary (-rs).
+    Reason text may be empty — the GATE rejects reason-less skips; nothing
+    here paper over them."""
+    skips = []
+    for l in out.splitlines():
+        l = l.strip()
+        if l.startswith("SKIPPED ["):
+            rest = l.split("] ", 1)[-1]
+            loc, _, reason = rest.partition(": ")
+            skips.append((loc.strip(), reason.strip()))
+    return skips
+
 def _write_log(command, rc, duration, out, err):
+    """The header block is pipeline-owned (gate_test trusts it alone);
+    stdout/stderr follow as worker-controlled text."""
     os.makedirs("artifacts", exist_ok=True)
+    skips = _parse_skips(out)
+    header = f"COMMAND: {command}\nEXIT_CODE: {rc}\nDURATION_S: {duration:.1f}\n"
+    if skips:  # owner ruling F-02: structured, count-matched skip declarations
+        header += f"SKIPS: {len(skips)}\n"
+        header += "".join(f"SKIP: {loc} — {reason}\n" for loc, reason in skips)
     with open("artifacts/test.log", "w") as f:
-        f.write(f"COMMAND: {command}\nEXIT_CODE: {rc}\nDURATION_S: {duration:.1f}\n"
-                f"--- stdout ---\n{out}\n--- stderr ---\n{err}")
+        f.write(header + f"--- stdout ---\n{out}\n--- stderr ---\n{err}")
     return "artifacts/test.log"
 
 def run(mock=False, worker=None, target_repo=None):
@@ -23,7 +42,7 @@ def run(mock=False, worker=None, target_repo=None):
         return _run_target(target_repo)
     if not mock:
         raise NotImplementedError("worker not wired for phase " + PHASE)
-    cmd = [sys.executable, "-m", "pytest", "tests/test_state.py", "-q"]
+    cmd = [sys.executable, "-m", "pytest", "tests/test_state.py", "-q", "-rs"]
     t0 = time.monotonic()
     r = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO_ROOT)
     return _write_log(" ".join(cmd) + f" (cwd={REPO_ROOT})",
@@ -32,7 +51,7 @@ def run(mock=False, worker=None, target_repo=None):
 def _run_target(target_repo):
     if not target_repo or not os.path.isdir(target_repo):
         raise ValueError(f"TEST real worker needs a valid target_repo, got: {target_repo!r}")
-    cmd = [sys.executable, "-m", "pytest", ".", "-q"]
+    cmd = [sys.executable, "-m", "pytest", ".", "-q", "-rs"]
     t0 = time.monotonic()
     r = subprocess.run(cmd, capture_output=True, text=True, cwd=target_repo)
     duration = time.monotonic() - t0

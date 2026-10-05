@@ -172,11 +172,10 @@ def _run_pxx(target_repo, reviewer=None):
                 json.dump({"task": d["task"], **evidence,
                            "contradictions": contras, "limitations": lims}, f,
                           indent=1)
-            mechanical = [f"- issue: {c} (mechanical import-resolution check)"
-                          for c in contras]
-            mechanical += [f"- issue: limitation — {l} (mechanical check, fail-closed)"
-                           for l in lims]
-            lines += [f"## {d['task']}"] + findings + mechanical + [""]
+            # ADV-005/M-15: mechanical findings are machine evidence, gated
+            # DIRECTLY from mechanical.json — never embedded as markdown issue
+            # lines where worker text or symbol names could mediate them.
+            lines += [f"## {d['task']}"] + findings + [""]
     finally:
         if iso_path and os.path.exists(iso_path):
             os.remove(iso_path)

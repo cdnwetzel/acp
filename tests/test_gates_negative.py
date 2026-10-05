@@ -44,7 +44,8 @@ def test_gate_review_rejects_unresolved_issue(tmp_path, monkeypatch):
     _mk_intake(tmp_path, monkeypatch)
     open("artifacts/review.md", "w").write(
         "# review.md\n\n## TASK-1\n- issue: something is wrong here\n\n"
-        "## TASK-2\n- issue: ok — RESOLVED\n\n## TASK-3\n- issue: ok — RESOLVED\n")
+        "## TASK-2\n- issue: ok — RESOLVED (verified fixed)\n\n"
+        "## TASK-3\n- issue: ok — RESOLVED (verified fixed)\n")
     with pytest.raises(gates.GateError, match="unresolved"):
         gates.gate_review()
 
@@ -60,16 +61,21 @@ def test_gate_test_rejects_nonzero_exit(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     os.makedirs("artifacts")
     open("artifacts/test.log", "w").write(
-        "COMMAND: pytest .\nEXIT_CODE: 2\nDURATION_S: 0.1\n3 passed in 0.05s\n")
-    with pytest.raises(gates.GateError, match="zero exit code"):
+        "COMMAND: pytest .\nEXIT_CODE: 2\nDURATION_S: 0.1\n"
+        "--- stdout ---\n3 passed in 0.05s\n--- stderr ---\n")
+    with pytest.raises(gates.GateError, match="nonzero exit code 2"):
         gates.gate_test()
 
 def test_gate_test_rejects_collection_failure(tmp_path, monkeypatch):
+    """Backstop: collection-error text in the body fails even with a zero
+    header exit (in practice pytest exits 2 on collection errors and the
+    exit-code check fires first — L-15)."""
     monkeypatch.chdir(tmp_path)
     os.makedirs("artifacts")
     open("artifacts/test.log", "w").write(
         "COMMAND: pytest .\nEXIT_CODE: 0\nDURATION_S: 0.1\n"
-        "ERROR test_calc.py\n!!!! Interrupted: 1 error during collection !!!!\n")
+        "--- stdout ---\nERROR test_calc.py\n"
+        "!!!! Interrupted: 1 error during collection !!!!\n--- stderr ---\n")
     with pytest.raises(gates.GateError, match="collection"):
         gates.gate_test()
 

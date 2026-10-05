@@ -118,6 +118,9 @@ def _run_pxx(target_repo):
             with open(iso_path, "w") as f:
                 f.write(ISOLATION_TOML)
             scope = task.get("scope", [])
+            if not scope:  # M-6/ADV-008: schema-required; defense in depth here
+                raise WorkerError(f"{task['id']}: task has no scope — the plan "
+                                  f"gate must never pass a scopeless task")
             prompt = (f"You are the CODE worker for exactly one pipeline task. "
                       f"Input contract — this task only:\n"
                       f"{task['id']}: {task['criterion']}\n"
