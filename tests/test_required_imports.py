@@ -70,6 +70,7 @@ def test_local_redefinition_fails(tmp_path):
 def test_dynamic_import_never_satisfies(tmp_path):
     test = ("import importlib\nfrom calc import add\n\n"
             "ops = importlib.import_module('ops')\n\n"
+            "def test_add():\n    assert add(2, 2) == 4\n\n"
             "def test_divide():\n    assert ops.divide(6, 3) == 2\n")
     c = _one_fail(ri.verify(_repo(tmp_path, OPS, CALC, test), REQS))
     assert c["symbol"] == "divide" and "dynamic import" in c["detail"]

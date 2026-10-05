@@ -7,10 +7,13 @@ Provenance rules (tightened 2026-10-04 — "imported" is NOT "defined"):
 - A file PROVIDES a symbol it locally defines (def/class/assignment).
 - A file PROVIDES an imported symbol ONLY as a proven re-export: the import's
   source is an owned module that itself provides that symbol (recursive,
-  cycle-safe). Aliases provide the aliased name via the same proof.
-- Anything unverifiable — wildcards, relative imports, dynamic imports,
-  plain `import owned_module` attribute usage, re-export cycles — fails
-  CLOSED as an explicit limitation.
+  cycle-safe, nested-layout aware). Aliases provide the aliased name via the
+  same proof.
+- Anything unverifiable — wildcards, relative imports (any ast level),
+  dynamic imports, plain `import owned_module` attribute usage, re-export
+  cycles, modules neither owned nor host-resolvable — fails CLOSED as an
+  explicit limitation. Host-resolvable externals (stdlib/installed) are
+  silently out of scope (M-15: a stdlib import is not a finding).
 
 A contradiction (symbol not provided by the imported-from owned module but
 provided elsewhere, or by nothing) cannot be marked RESOLVED by the reviewer.
@@ -23,6 +26,8 @@ a fragment, not a file — a fragment that fails to parse fails closed, and a
 fragment that parses can silently miss imports (gate defect, drill 2026-10-04).
 """
 import ast, hashlib, os
+
+from pipeline.required_imports import collect_defined  # shared (M-15 widening)
 
 class ImportLimitation(Exception):
     """The check cannot verify this construct — fail closed."""
@@ -53,17 +58,15 @@ def _tree(text, what):
 
 def _symbols(tree, fname):
     """(defined, imported, limitations) for a module.
-    defined: locally defined names. imported: local_name -> (source module, original name)."""
-    defined, imported, limitations = set(), {}, []
+    defined: locally defined names (if/try/AnnAssign/tuple-aware via
+    collect_defined). imported: local_name -> (source module, original name).
+    Relative imports at ANY level are limitations (M-11: ast level honored —
+    'from .ops import x' is module 'ops' with level 1, not plain 'ops')."""
+    defined = collect_defined(tree.body)
+    imported, limitations = {}, []
     for node in tree.body:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            defined.add(node.name)
-        elif isinstance(node, ast.Assign):
-            for t in node.targets:
-                if isinstance(t, ast.Name):
-                    defined.add(t.id)
-        elif isinstance(node, ast.ImportFrom):
-            if node.module is None:
+        if isinstance(node, ast.ImportFrom):
+            if node.level or node.module is None:
                 limitations.append(f"{fname}: relative import at line {node.lineno}")
                 continue
             for a in node.names:
@@ -85,17 +88,37 @@ def _check_dynamic(tree, fname):
 
 def _imports(tree):
     """(module, [imported names], lineno) for each `from module import ...`.
-    Wildcards and relative imports fail closed."""
+    Wildcards and relative imports (ANY level, M-11) fail closed."""
     out = []
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
-            if node.module is None:
+            if node.level or node.module is None:
                 raise ImportLimitation(f"relative import at line {node.lineno}")
             for a in node.names:
                 if a.name == "*":
                     raise ImportLimitation(f"wildcard import at line {node.lineno}")
             out.append((node.module, [a.name for a in node.names], node.lineno))
     return out
+
+def _resolve_owned(module, ownership):
+    """Owned file providing `module`: exact or path-suffix match (nested
+    layouts — M-11: scope 'src/ops.py' owns module 'ops'). Returns
+    (path or None, ambiguous)."""
+    target = os.path.join(*module.split(".")) + ".py"
+    matches = [f for f in ownership if f == target or f.endswith("/" + target)]
+    if len(matches) > 1:
+        return None, True
+    return (matches[0] if matches else None), False
+
+def _importable(module):
+    """Host-resolvable module (stdlib/installed)? find_spec only — module
+    code is never executed. Used to keep external imports silent (M-15):
+    only OWNED-module mismatches and UNRESOLVABLE modules are limitations."""
+    import importlib.util
+    try:
+        return importlib.util.find_spec(module) is not None
+    except (ImportError, ValueError, AttributeError):
+        return False
 
 def _symbols_for(fname, manifest, target_repo, cache):
     """Symbols of an owned file: repo content first (post-CODE state),
@@ -137,13 +160,11 @@ def _provides(fname, name, manifest, target_repo, cache, seen=None):
     src = imported.get(name)
     if src is None:
         return False
-    src_module, orig_name = src
-    if "." in src_module:
-        return False  # package-source re-export is outside the narrow contract
-    src_file = src_module + ".py"
     owned = {f for d in manifest["diffs"] for f in (d.get("scope") or [])}
-    if src_file not in owned:
-        return False  # re-export from an external module is not provable here
+    src_module, orig_name = src
+    src_file, ambiguous = _resolve_owned(src_module, owned)
+    if ambiguous or src_file is None:
+        return False  # ambiguous or external re-export source is not provable here
     return _provides(src_file, orig_name, manifest, target_repo, cache, seen)
 
 def _diff_files(diff_text):
@@ -215,17 +236,26 @@ def check_imports(diff_text, plan, manifest, target_repo=None, evidence=None):
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for a in node.names:
-                    if a.name + ".py" in ownership:
+                    owned_path, ambiguous = _resolve_owned(a.name, ownership)
+                    if owned_path or ambiguous:
                         limitations.append(
                             f"line {node.lineno}: plain import of owned module "
                             f"'{a.name}' — attribute usage unverified (narrow contract)")
     for module, names, lineno in imports:
-        if "." in module:
-            limitations.append(f"line {lineno}: package import '{module}' outside the narrow contract — unverified")
+        module_file, ambiguous = _resolve_owned(module, ownership)
+        if ambiguous:
+            limitations.append(f"line {lineno}: module '{module}' maps to multiple "
+                               f"owned files — ambiguous (fail closed)")
             continue
-        module_file = module + ".py"
-        if module_file not in ownership:
-            continue  # external module — out of scope by design
+        if module_file is None:
+            # External module. Host-resolvable (stdlib/installed): silently out
+            # of scope (M-15 — a stdlib import is not a finding). Unresolvable:
+            # explicit limitation, never a silent skip (M-11).
+            if _importable(module):
+                continue
+            limitations.append(f"line {lineno}: module '{module}' is neither owned "
+                               f"nor host-resolvable — unverified (fail closed)")
+            continue
         _, _, lims = _symbols_for(module_file, manifest, target_repo, cache)
         limitations.extend(lims)
         for name in names:
