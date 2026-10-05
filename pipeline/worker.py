@@ -4,7 +4,7 @@ Both CODE and REVIEW real paths consume these so the governed-endpoint
 discipline lives in exactly one place (step-2 conditions, fail-closed
 fallback, explicit scope, C7 PATH lesson).
 """
-import json, os, socket
+import json, os, socket, subprocess
 
 ISOLATION_TOML = (
     "# ACP-managed run isolation. Empty fallback chain: a governed-phase failure\n"
@@ -46,6 +46,47 @@ def write_transcript(path, argv, prompt, r):
                 f"[prompt_sha256={prompt_hash(prompt)}]\n"
                 f"--- isolation config (pxx.toml as written) ---\n{ISOLATION_TOML}"
                 f"--- stdout ---\n{r.stdout}\n--- stderr ---\n{r.stderr}")
+
+def isolation_write(cwd):
+    """Write ISOLATION_TOML to <cwd>/pxx.toml, preserving any pre-existing
+    file byte-for-byte. Returns (path, restore): restore() rewrites the
+    original bytes or removes the file only if WE created it (ADV-017: never
+    delete configuration the target repo owned). pxx stashes (removes) the
+    file per invocation, so restore() recreates an original that vanished."""
+    iso_path = os.path.join(cwd or ".", "pxx.toml")
+    original = None
+    if os.path.exists(iso_path):
+        original = open(iso_path, "rb").read()
+    with open(iso_path, "w") as f:
+        f.write(ISOLATION_TOML)
+    def restore():
+        if original is not None:
+            with open(iso_path, "wb") as f:
+                f.write(original)
+        elif os.path.exists(iso_path):
+            os.remove(iso_path)
+    return iso_path, restore
+
+def git_boundary_snapshot(repo):
+    """(HEAD, full status incl. ignored) — the read-only boundary record
+    (ADV-020: plain `git status --short` is blind to ignored files and to
+    commits; a judging phase must leave BOTH untouched)."""
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo,
+                          capture_output=True, text=True).stdout.strip()
+    status = subprocess.run(["git", "status", "--ignored", "--short"],
+                            cwd=repo, capture_output=True, text=True).stdout
+    return head, status
+
+def assert_read_only(repo, before, phase):
+    """Fail loudly if a judging phase moved HEAD or changed ANY file state,
+    ignored files included."""
+    head, status = git_boundary_snapshot(repo)
+    if head != before[0]:
+        raise WorkerError(f"{phase} violated its read-only boundary — HEAD moved "
+                          f"({before[0][:10]} -> {head[:10]}); commits are forbidden")
+    if status != before[1]:
+        raise WorkerError(f"{phase} violated its read-only boundary — repo state "
+                          f"changed (ignored files included): {status.strip()[:200]}")
 
 def classify_pxx_failure(prompt, r, transcript_path):
     """Classify a nonzero pxx exit (owner condition 2026-10-04): preserve the
@@ -122,32 +163,37 @@ def scope_offenders(changed, scope):
     return [f for f in changed
             if not any(f == s or f.startswith(s + "/") for s in prefixes)]
 
+def _no_duplicate_keys(pairs):
+    keys = [k for k, _ in pairs]
+    if len(keys) != len(set(keys)):
+        raise WorkerError("duplicate keys in worker JSON object — refusing to "
+                          "let last-wins hide a conflict")
+    return dict(pairs)
+
 def extract_one_json(stdout):
     """Exactly one JSON object from worker stdout (owner adjustment
     2026-10-04): the orchestrator validates and writes the artifact — the
-    worker never touches it. Zero, multiple, or ambiguous objects fail loud."""
-    candidates, depth, start = [], 0, None
-    for i, ch in enumerate(stdout):
-        if ch == "{":
-            if depth == 0:
-                start = i
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0 and start is not None:
-                candidates.append(stdout[start:i + 1])
-                start = None
-    objs = []
-    for c in candidates:
+    worker never touches it. Zero, multiple, or ambiguous objects fail loud.
+    Scanning uses json.JSONDecoder().raw_decode (ADV-019): string-aware —
+    braces inside string literals never miscount — and duplicate keys are
+    rejected instead of last-wins."""
+    decoder = json.JSONDecoder(object_pairs_hook=_no_duplicate_keys)
+    objs, i = [], 0
+    while True:
+        start = stdout.find("{", i)
+        if start == -1:
+            break
         try:
-            objs.append(json.loads(c))
+            obj, end = decoder.raw_decode(stdout, start)
         except json.JSONDecodeError:
-            pass
+            i = start + 1
+            continue
+        objs.append(obj)
+        i = end
     if len(objs) != 1:
         raise WorkerError(
             f"expected exactly one JSON object in worker output, found "
-            f"{len(objs)} ({len(candidates)} brace-balanced candidates) — "
-            f"refusing to guess or repair")
+            f"{len(objs)} — refusing to guess or repair")
     return objs[0]
 
 def run_ask(ep, prompt, transcript_path, budget_rounds="4", budget_seconds="600",
@@ -164,9 +210,8 @@ def run_ask(ep, prompt, transcript_path, budget_rounds="4", budget_seconds="600"
     spawn failure (OSError, message preserved), timeout (budget + 60s slack,
     partial output preserved, transcript rc=None), signal termination
     (negative returncode, named signal), nonzero exit (classified)."""
-    import subprocess, time
+    import time
     from pipeline import envelope
-    iso_path = os.path.join(cwd or ".", "pxx.toml")
     timeout = int(budget_seconds) + 60
     budgets = {"rounds": budget_rounds, "seconds": budget_seconds}
 
@@ -195,9 +240,8 @@ def run_ask(ep, prompt, transcript_path, budget_rounds="4", budget_seconds="600"
             "--budget-rounds", budget_rounds, "--budget-seconds", budget_seconds,
             "--no-memory", "--sandbox"]
     r, failure_class = None, None
+    iso_path, restore = isolation_write(cwd)  # preserve a pre-existing pxx.toml
     try:
-        with open(iso_path, "w") as f:  # pxx stashes repo-local config per invocation:
-            f.write(ISOLATION_TOML)     # rewrite before EVERY ask
         try:
             r = subprocess.run(argv, capture_output=True, text=True,
                                env=pxx_env(), cwd=cwd or ".", timeout=timeout)
@@ -210,8 +254,7 @@ def run_ask(ep, prompt, transcript_path, budget_rounds="4", budget_seconds="600"
         except OSError as e:
             failure_class = f"spawn failure: {e}"
     finally:
-        if os.path.exists(iso_path):
-            os.remove(iso_path)
+        restore()
     duration = time.monotonic() - t0
     if r is None:  # spawn failure — no process existed, no transcript possible
         _record(" ".join(argv), -1, "", duration, failure_class)

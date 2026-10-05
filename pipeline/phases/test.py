@@ -3,8 +3,17 @@
 Mock (no target_repo): runs the repo's deterministic ledger suite as
 stand-in evidence. Real (worker="real" + target_repo): executes the target
 repository's own pytest suite — the artifact's correctness evidence, not a
-proxy. Both write the same test.log contract: COMMAND, EXIT_CODE,
-DURATION_S, then full stdout/stderr. Phases produce; the GATE decides.
+proxy. Both write the same test.log contract: pipeline-owned header
+(COMMAND, EXIT_CODE, DURATION_S, SKIPS/SKIP declarations), then full
+stdout/stderr as worker-controlled text. Phases produce; the GATE decides.
+
+Execution boundary (ADV-021 decision, owner scope 2026-10-04): in drill scope
+pytest runs worker-authored code with the orchestrator's uid and environment
+on the same host as the ledger — a standing capability under ADR-001's shared
+trust domain, mitigated only by scope gates and CODE provenance. Before any
+production-shaped operation this needs an owner decision on a sandboxed
+executor (separate account/host without ledger or artifact write access).
+That decision is NOT yet made; drill scope only.
 """
 import json, os, subprocess, sys, time
 

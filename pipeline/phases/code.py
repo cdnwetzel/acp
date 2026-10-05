@@ -106,6 +106,8 @@ def _run_pxx(target_repo):
     plan = json.load(open("artifacts/plan.json"))
     os.makedirs("artifacts/diff", exist_ok=True)
     iso_path = os.path.join(target_repo, "pxx.toml")
+    iso_original = (open(iso_path, "rb").read()
+                    if os.path.exists(iso_path) else None)
     st, done = _load_code_state(target_repo)
     try:
         for task in plan["tasks"]:
@@ -186,7 +188,10 @@ def _run_pxx(target_repo):
                                     "patch": path, "scope": scope or changed})
             _write_code_state(st)
     finally:
-        if os.path.exists(iso_path):
+        if iso_original is not None:
+            with open(iso_path, "wb") as f:  # ADV-017: restore, never delete
+                f.write(iso_original)
+        elif os.path.exists(iso_path):
             os.remove(iso_path)
     by_task = {c["task"]: c for c in st["completed"]}
     diffs = [{"task": t["id"], "path": by_task[t["id"]]["patch"],

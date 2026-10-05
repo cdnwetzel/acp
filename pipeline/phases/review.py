@@ -9,8 +9,9 @@ issue RESOLVED or WAIVED-with-reason.
 """
 import json, os, re, subprocess, time
 from pipeline.worker import (ISOLATION_TOML, WorkerError, assert_independence,
-                             check_access, classify_pxx_failure, pxx_bin,
-                             pxx_env, write_transcript)
+                             assert_read_only, check_access, classify_pxx_failure,
+                             git_boundary_snapshot, pxx_bin, pxx_env,
+                             scope_offenders, write_transcript)
 
 PHASE = "review"
 
@@ -91,6 +92,9 @@ def _run_pxx(target_repo, reviewer=None):
     if target_repo and os.path.isdir(target_repo):
         iso_path = os.path.join(target_repo, "pxx.toml")
     cwd = target_repo if iso_path else "."
+    iso_original = (open(iso_path, "rb").read()
+                    if iso_path and os.path.exists(iso_path) else None)
+    boundary = git_boundary_snapshot(target_repo) if iso_path else None
     lines = ["# review.md", ""]
     try:
         for d in manifest["diffs"]:
@@ -177,15 +181,13 @@ def _run_pxx(target_repo, reviewer=None):
             # lines where worker text or symbol names could mediate them.
             lines += [f"## {d['task']}"] + findings + [""]
     finally:
-        if iso_path and os.path.exists(iso_path):
+        if iso_original is not None:
+            with open(iso_path, "wb") as f:  # ADV-017: restore, never delete
+                f.write(iso_original)
+        elif iso_path and os.path.exists(iso_path):
             os.remove(iso_path)
-    if iso_path:  # read-only boundary: REVIEW must not have touched the repo
-        dirty = subprocess.run(["git", "status", "--short"],
-                               capture_output=True, text=True,
-                               cwd=target_repo).stdout.strip()
-        if dirty:
-            raise WorkerError(
-                f"REVIEW violated its read-only boundary — repo is dirty: {dirty}")
+    if iso_path:  # read-only boundary (ADV-020): HEAD + ignored-aware status
+        assert_read_only(target_repo, boundary, "REVIEW")
     with open("artifacts/review.md", "w") as f:
         f.write("\n".join(lines))
     return "artifacts/review.md"
