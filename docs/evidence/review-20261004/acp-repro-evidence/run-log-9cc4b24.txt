@@ -1,0 +1,106 @@
+commit:      9cc4b24e5256fd965fadf206c2bd520dd704bb5b
+python:      Python 3.14.8
+run at:      2026-10-04T23:15:28Z
+export dir:  /var/folders/dv/qlfq6bv130n5gsyj4vz917440000gn/T/tmp.lUy7L5lfaa   (throwaway; live repo untouched)
+
+=================== pytest: repro/ (FAILED = defect confirmed; CTRL_* must PASS) ===================
+.FFFF.FF.FFF.FFF.FFFFFFF                                                 [100%]
+=================================== FAILURES ===================================
+E   Failed: DID NOT RAISE GateError
+/private/var/folders/dv/qlfq6bv130n5gsyj4vz917440000gn/T/tmp.lUy7L5lfaa/repro/test_candidates.py:45: Failed: DID NOT RAISE GateError
+E   Failed: DID NOT RAISE GateError
+/private/var/folders/dv/qlfq6bv130n5gsyj4vz917440000gn/T/tmp.lUy7L5lfaa/repro/test_candidates.py:51: Failed: DID NOT RAISE GateError
+E   Failed: DID NOT RAISE GateError
+/private/var/folders/dv/qlfq6bv130n5gsyj4vz917440000gn/T/tmp.lUy7L5lfaa/repro/test_candidates.py:56: Failed: DID NOT RAISE GateError
+E   Failed: DID NOT RAISE GateError
+/private/var/folders/dv/qlfq6bv130n5gsyj4vz917440000gn/T/tmp.lUy7L5lfaa/repro/test_candidates.py:61: Failed: DID NOT RAISE GateError
+E   Failed: DID NOT RAISE GateError
+/private/var/folders/dv/qlfq6bv130n5gsyj4vz917440000gn/T/tmp.lUy7L5lfaa/repro/test_candidates.py:83: Failed: DID NOT RAISE GateError
+E   Failed: DID NOT RAISE GateError
+/private/var/folders/dv/qlfq6bv130n5gsyj4vz917440000gn/T/tmp.lUy7L5lfaa/repro/test_candidates.py:89: Failed: DID NOT RAISE GateError
+E   Failed: DID NOT RAISE GateError
+/private/var/folders/dv/qlfq6bv130n5gsyj4vz917440000gn/T/tmp.lUy7L5lfaa/repro/test_candidates.py:109: Failed: DID NOT RAISE GateError
+E   Failed: DID NOT RAISE GateError
+/private/var/folders/dv/qlfq6bv130n5gsyj4vz917440000gn/T/tmp.lUy7L5lfaa/repro/test_candidates.py:114: Failed: DID NOT RAISE GateError
+E   pipeline.gates.GateError: criterion traced to FAIL: AC-2: reject input with FAIL status
+/private/var/folders/dv/qlfq6bv130n5gsyj4vz917440000gn/T/tmp.lUy7L5lfaa/pipeline/gates.py:128: pipeline.gates.GateError: criterion traced to FAIL: AC-2: reject input with FAIL status
+E   AssertionError: run-B returned 'done' with 0 ledger rows of its own
+    assert ('done' != 'done' or [])
+/private/var/folders/dv/qlfq6bv130n5gsyj4vz917440000gn/T/tmp.lUy7L5lfaa/repro/test_candidates.py:150: AssertionError: run-B returned 'done' with 0 ledger rows of its own
+E   AssertionError: assert 'gate_open:intake' != 'gate_open:intake'
+     +  where 'gate_open:intake' = <function run_all at 0x108bec720>()
+     +    where <function run_all at 0x108bec720> = runner.run_all
+/private/var/folders/dv/qlfq6bv130n5gsyj4vz917440000gn/T/tmp.lUy7L5lfaa/repro/test_candidates.py:158: AssertionError: assert 'gate_open:intake' != 'gate_open:intake'
+E   assert (None)
+/private/var/folders/dv/qlfq6bv130n5gsyj4vz917440000gn/T/tmp.lUy7L5lfaa/repro/test_candidates.py:172: assert (None)
+E   assert (not True)
+/private/var/folders/dv/qlfq6bv130n5gsyj4vz917440000gn/T/tmp.lUy7L5lfaa/repro/test_candidates.py:195: assert (not True)
+E   pipeline.gates.GateError: unresolved review issue: - issue: planted unresolved finding
+
+During handling of the above exception, another exception occurred:
+E   PermissionError: [Errno 13] Permission denied: 'artifacts/envelope.jsonl'
+
+During handling of the above exception, another exception occurred:
+E   pipeline.envelope.EnvelopeError: envelope append failed: [Errno 13] Permission denied: 'artifacts/envelope.jsonl'
+/private/var/folders/dv/qlfq6bv130n5gsyj4vz917440000gn/T/tmp.lUy7L5lfaa/pipeline/envelope.py:92: pipeline.envelope.EnvelopeError: envelope append failed: [Errno 13] Permission denied: 'artifacts/envelope.jsonl'
+E   AssertionError: review ledger events: ['started']
+    assert 'gate_failed' in ['started']
+     +  where ['started'] = _events('review')
+/private/var/folders/dv/qlfq6bv130n5gsyj4vz917440000gn/T/tmp.lUy7L5lfaa/repro/test_candidates.py:228: AssertionError: review ledger events: ['started']
+E   AssertionError: run_all() returned 'gate_open:plan' with no intake approval; human_approve rows: []
+    assert 'gate_open:plan' == 'gate_open:intake'
+      
+      - gate_open:intake
+      + gate_open:plan
+/private/var/folders/dv/qlfq6bv130n5gsyj4vz917440000gn/T/tmp.lUy7L5lfaa/repro/test_top.py:18: AssertionError: run_all() returned 'gate_open:plan' with no intake approval; human_approve rows: []
+E   AssertionError: returned 'gate_open:plan' without any approval
+    assert 'gate_open:plan' == 'gate_open:intake'
+      
+      - gate_open:intake
+      + gate_open:plan
+/private/var/folders/dv/qlfq6bv130n5gsyj4vz917440000gn/T/tmp.lUy7L5lfaa/repro/test_top.py:29: AssertionError: returned 'gate_open:plan' without any approval
+E   AssertionError: run advanced to 'gate_open:plan' after approve-then-deny
+    assert 'gate_open:plan' != 'gate_open:plan'
+/private/var/folders/dv/qlfq6bv130n5gsyj4vz917440000gn/T/tmp.lUy7L5lfaa/repro/test_top.py:38: AssertionError: run advanced to 'gate_open:plan' after approve-then-deny
+E   AssertionError: {'ok': True, 'head': '780f35e3293279a9268dd6c97f514999397e49080d1e6ceac0d512efb5bfe73a', 'rows': 3, 'legacy': 1, ...}
+    assert not True
+/private/var/folders/dv/qlfq6bv130n5gsyj4vz917440000gn/T/tmp.lUy7L5lfaa/repro/test_top.py:51: AssertionError: {'ok': True, 'head': '780f35e3293279a9268dd6c97f514999397e49080d1e6ceac0d512efb5bfe73a', 'rows': 3, 'legacy': 1, ...}
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED repro/test_candidates.py::test_CTRL_review_plain_unresolved_is_rejected
+PASSED repro/test_candidates.py::test_CTRL_test_gate_rejects_nonzero_header_without_injection
+PASSED repro/test_candidates.py::test_CTRL_verify_gate_rejects_unknown_verdict
+PASSED repro/test_candidates.py::test_CTRL_P2a_distinct_directories_do_not_share_completion
+PASSED repro/test_candidates.py::test_CTRL_E2a_reconcile_detects_tamper_when_name_is_relative_to_dir
+FAILED repro/test_candidates.py::test_G1a_review_negated_RESOLVED_must_not_pass
+FAILED repro/test_candidates.py::test_G1b_review_waiver_without_reason_must_not_pass
+FAILED repro/test_candidates.py::test_G1c_review_TASK_10_must_not_satisfy_TASK_1
+FAILED repro/test_candidates.py::test_G1d_review_unrecognised_issue_format_must_not_pass
+FAILED repro/test_candidates.py::test_G1e_test_gate_must_read_exit_code_from_header_only
+FAILED repro/test_candidates.py::test_G1f_test_gate_skip_reason_token_in_body_must_not_waive_skips
+FAILED repro/test_candidates.py::test_G1g_verify_criterion_text_containing_PASS_must_not_self_satisfy
+FAILED repro/test_candidates.py::test_G1h_verify_NOT_PASS_must_not_count_as_pass
+FAILED repro/test_candidates.py::test_G1i_verify_legit_criterion_containing_FAIL_must_pass
+FAILED repro/test_candidates.py::test_P2b_second_run_id_on_same_ledger_must_not_report_done_unbacked
+FAILED repro/test_candidates.py::test_P2c_denied_gate_must_be_distinguishable_from_pending
+FAILED repro/test_candidates.py::test_E1_reviewer_identity_must_parse_multiline_argv
+FAILED repro/test_candidates.py::test_E2b_reconcile_detects_tamper_for_names_producers_actually_use
+FAILED repro/test_candidates.py::test_E3a_gate_failure_must_surface_as_GateError_even_if_envelope_fails
+FAILED repro/test_candidates.py::test_E3b_gate_failure_must_be_ledgered_even_if_envelope_fails
+FAILED repro/test_top.py::test_C1_stop_after_must_not_let_run_pass_an_unopened_human_gate
+FAILED repro/test_top.py::test_C1b_crash_between_complete_and_gate_open_must_not_count_as_approved
+FAILED repro/test_top.py::test_M3_later_deny_must_revoke_earlier_approval - A...
+FAILED repro/test_top.py::test_H1_stripped_prev_hash_on_first_chained_row_must_be_detected
+19 failed, 5 passed in 0.24s
+
+=================== end-to-end: G1e (real pytest exit 1, gate_test passes) ===================
+COMMAND: /opt/homebrew/opt/python@3.14/bin/python3.14 -m pytest . -q (cwd=/var/folders/dv/qlfq6bv130n5gsyj4vz917440000gn/T/tmp.LV09igv9XQ/repo)
+EXIT_CODE: 1
+DURATION_S: 0.1
+--- stdout ---
+...                                                                      [100%]
+EXIT_CODE: 0
+3 passed in 0.00s
+
+
+gate_test -> True    <-- EXPECTED: GateError (real exit code was 1)
