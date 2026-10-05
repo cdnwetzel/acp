@@ -6,4 +6,6 @@ Lifecycle gates: INTAKE -> PLAN -> CODE -> REVIEW -> TEST -> VERIFY -> VALIDATE
 Human gates: Intake, Plan, Validate. Everything between runs unattended.
 
 Resume anywhere: state is an append-only event ledger (state.jsonl).
-Retries are bounded (1 re-plan, 3 test-fix loops) then escalate. No silent failures.
+Resume anywhere: state is an append-only event ledger (state.jsonl).
+No automatic retries: failures fail closed and are ledgered; reruns are
+operator-driven; a human deny is terminal for its gate window.

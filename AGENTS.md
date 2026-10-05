@@ -7,14 +7,17 @@ comes from Chris.
 ## Project overview
 
 **ACP (Autonomous Coding Pipeline)** — deterministic orchestrator, LLM-as-worker.
-One developer + one agent = two-person team. The repository currently contains
-only the Python orchestrator scaffold (state ledger, gates, human approvals,
-phase stubs); LLM workers are NOT yet wired in.
+One developer + one agent = two-person team. The repository contains the Python
+orchestrator (state ledger, gates, human approvals, phase workers) plus the
+eval lane; all six non-VALIDATE phases have real-worker paths proven in drill
+scope (VALIDATE remains human-only; no production-readiness claim).
 
 Lifecycle gates: `INTAKE -> PLAN -> CODE -> REVIEW -> TEST -> VERIFY -> VALIDATE`
 Human gates: Intake, Plan, Validate. Everything between runs unattended.
 Resume anywhere: state is an append-only event ledger (`state.jsonl`).
-Retries are bounded (1 re-plan, 3 test-fix loops) then escalate. No silent failures.
+There are NO automatic retries: failures are ledgered and fail closed;
+reruns are operator-driven; a deny is terminal for its gate window.
+No silent failures.
 
 ## Invariants (from SPEC.md — violations = failed run)
 
@@ -34,25 +37,40 @@ silent skips), `verification.md` (traceability matrix), `validation.md`
 
 ```
 pipeline/
-  state.py       — append-only hash-chained JSONL event ledger (devswarm model:
-                   canonical form, prev_hash + per-row stored hash, genesis=64
-                   zeros, legacy prefix, correction rows, flock-serialized
-                   emit, flush+fsync); emit() / verify_chain() / current_phase()
+  state.py       — append-only hash-chained JSONL event ledger (canonical form,
+                   prev_hash + per-row stored hash, genesis=64 zeros, SEALED
+                   legacy prefix (legacy-seal-v1, 2026-10-04), contiguous-seq
+                   validation, correction rows, flock-serialized emit,
+                   flush+fsync, lifecycle identity stamped on every row);
+                   emit() / verify_chain() / lifecycle() / seal_legacy()
   validate.py    — stdlib JSON-schema-subset validator (type/required/
                    properties/items/minLength/minItems/pattern)
-  gates.py       — pure functions: artifact in -> verdict out; GateError on failure
-  approvals.py   — human-gate CLI; writes approve/deny events to the ledger
-  runner.py      — deterministic orchestrator; mock-worker lifecycle with
-                   ledger-native resume and human-gate pauses
-  phases/        — one module per phase; mock workers (run(mock=True));
-                   code.py additionally has the opt-in pxx real path
-                   (worker="pxx") under the scoped guardrail-#5 lift;
-                   all other real paths remain NOT wired
+  gates.py       — strict parsers (not substring heuristics, repair 2026-10-04):
+                   header-owned test.log grammar, exact verdict cells, strict
+                   review dispositions, anchored task sections; GateError loud
+  approvals.py   — human-gate CLI; explicit validation (no asserts; -O-safe);
+                   open-gate + artifact-hash binding required for a decision
+  runner.py      — deterministic orchestrator; ledger-native resume; human-gate
+                   pauses; lifecycle refusal (lifecycle_complete:<id>);
+                   denied:<phase> terminal; worker_failed ledgered
+  envelope.py    — mandatory schema-validated worker evidence sidecar
+                   (hash-chained records, lifecycle-stamped); reconcile() is
+                   the deterministic evidence report
+  standby.py     — C5 snapshot + independently-verified-receipt protocol with
+                   anti-rollback ancestry checks
+  imports.py / required_imports.py — AST import layers (REVIEW mechanical
+                   provenance; TEST required-imports machine contract)
+  phases/        — one module per phase; mock workers plus drill-proven real
+                   paths (pxx via governed :8004; Asrock Ollama for REVIEW/
+                   VERIFY; real pytest for TEST); VALIDATE has no worker path
 contracts/
-  intake.schema.json, plan.schema.json, diff_manifest.schema.json
-tests/           — pytest: test_state.py, test_gates.py, test_approvals.py,
-                   test_validate.py, test_runner.py
-README.md, SPEC.md
+  intake.schema.json, plan.schema.json, diff_manifest.schema.json,
+  envelope.schema.json, eval_case.schema.json
+eval/            — evidence-only eval lane (corpus, harness, baselines;
+                   cannot open gates)
+tests/           — pytest suite (17+ files incl. adversarial gate tests,
+                   lifecycle, worker-failure, evidence-integrity)
+README.md, SPEC.md, docs/ (runbook, ship boundary, review registers)
 ```
 
 ## Technology stack and build
@@ -78,19 +96,20 @@ python3 -m pipeline.approvals <gate> approve|deny "reason"
 # gates: intake | plan | validate
 ```
 
-**Current test status (2026-10-03): 49 passed, 0 failed.** The two former red tests
-(wrong module path `pipeline.approve`, missing `import os`) were fixed in the test
-files only. C6 landed the same day: state.py is hash-chained with per-row stored
-hashes (tail-tamper detectable), flock-serialized emit, flush+fsync durability;
-repo ledger: 11 rows (8 legacy, 3 chained), chain verifies, head 27627478….
+**Current test status (2026-10-04, post repair program): 245 passed, 0
+failed** (`python3 -m pytest tests/ -q`). C6 (2026-10-03) landed hash-chaining;
+the 2026-10-04 repair program added the legacy-prefix seal (row 78),
+lifecycle identity, hash-bound approvals, strict gate parsers, envelope
+chaining, and standby anti-rollback — each with regression tests.
 
 ## Code style and design rules
 
 - Modules are small, single-purpose, with a one-line docstring stating intent.
 - Gates are pure functions with no side effects; they raise `GateError`
   (loud failure) instead of returning silent `None`.
-- The ledger is the source of truth: append-then-flush; `current_phase()`
-  never guesses, it reads the ledger.
+- The ledger is the source of truth: append-then-flush; resume reads ledger
+  rows (`runner._phase_complete` / `_gate_state`); `current_phase()` verifies
+  the chain before answering and never guesses.
 - Fail loudly: full error, exact command, exact stderr. No silent retries.
 - Comments/docstrings are sparse and explain invariants, not mechanics.
 
@@ -244,6 +263,56 @@ confirmed).
   vendor/model-family independence is incomplete by construction. Residual
   risk: shared family blind spots. Documented, not solved.
 
+## Repair program (2026-10-04, ledger rows 71–84)
+
+Three independent reviews (baseline `acp-baseline-review.md`, adversarial
+`acp-adversarial-review.md`, both at snapshot 9cc4b24; Codex repro package
+`~/Desktop/acp-repro-evidence/` with 24 executable defect tests) plus the
+orchestrator's own verification pass produced one exhaustive register
+(`docs/review-reconciliation-20261004.md`; earlier pass in
+`docs/defect-verification-20261004.md`). Owner scoped an 8-step repair
+program; steps 1–6 landed:
+
+1. Human-gate integrity: no-`gate_open` never approved (stop_after + crash
+   window fixed); deny terminal and distinct (`denied:<phase>`); approvals
+   CLI validation is explicit code, open-gate enforced, `-O`-safe.
+2. Ledger + approval authority: legacy prefix sealed (migration row, seq 78);
+   contiguous seq enforced; legacy rows with stored hashes recomputed;
+   `lifecycle_id` established at intake `started` and carried on rows,
+   envelope records, manifests, receipts; a done lifecycle refuses a second
+   run (`lifecycle_complete:<id>`); completions/approvals bind artifact
+   SHA-256; drifted artifacts refused at decision and resume; torn ledger
+   lines raise ChainError.
+3. Worker failure + resume: `worker_failed` ledger rows; run_ask failure
+   classes (spawn/timeout/signal/nonzero) with exact stderr; CODE resume
+   idempotent per task via code-state.json with ancestry verification.
+4. Strict evidence gates: test.log header grammar (exactly one EXIT_CODE,
+   pipeline-owned), structured skip declarations (owner ruling F-02),
+   strict review dispositions (RESOLVED (reason) / WAIVED: reason; OPEN,
+   negations, empty reasons, near-miss formats all fail), mechanical.json
+   contradictions gate directly (never markdown), verification verdict
+   cells parsed exactly, plan scope required + non-overlapping.
+4b. Import layer: six ADV-006 bypass classes closed (sys.path shadow,
+   relative level, function-local shadow, decoy import, monkeypatch,
+   nested-class vector); nested-layout ownership; stdlib imports silent;
+   AnnAssign/tuple/if-try definitions; non-UTF-8 fails closed.
+5. Worker boundary: pre-existing pxx.toml preserved/restored at all four
+   sites; extract_one_json is raw_decode-based with duplicate-key rejection;
+   read-only boundary compares HEAD + ignored-aware status; TEST execution
+   sandboxing decision documented as deferred (drill scope, ADR-001).
+6. Evidence + recovery: envelope records hash-chained and reconciled
+   (chain, manifest divergence, gate-without-evidence, retry-aware
+   sequencing, ledger_head membership, human-gate-bypass finding); standby
+   anti-rollback + receipt cross-check + flocked snapshots; effective-
+   provider independence with alias normalization; LAN endpoints probed
+   over HTTP; eval diff consumes the committed baseline index.
+
+Acceptance meter: the Codex repro package went from 5/24 to 24/24 passing
+against repaired HEAD, including its end-to-end gate_test injection.
+The first witnessed VALIDATE exercise (authorized, then aborted pre-gate on
+two PLAN contract failures) is NOT re-authorized; requalification (program
+step 8) precedes any new exercise.
+
 ## Open / parked register (must stay visible — not closed findings)
 
 - **REVIEW phase**: drill PASSED in scope (CODE+REVIEW, 2026-10-03) — no
@@ -331,8 +400,10 @@ confirmed).
   `ops/forward-8004-status.sh`). Supervision is operator infrastructure —
   the pipeline still never starts the forward itself (`check_access` fails
   closed when down). Restart-after-kill proven (6s resurrection).
-- **C5** NUC11 warm standby: gated on the functional state machine (mock
-  lifecycle proven 2026-10-03; standby build itself not started).
+- **C5** NUC11 warm standby: COMPLETE (2026-10-04, ship-boundary item 1) —
+  `pipeline/standby.py` snapshot + independently-verified-receipt protocol,
+  hash-locked venv on NUC11, kill−9 mid-flight and simulated-loss recovery
+  proven; anti-rollback ancestry checks added in the repair program.
 - **C8** Slack HITL: approved in principle, deferred; NUC11 broker.
 - **C3** tunnel retarget: parked; owner-executed if requested.
 - **C1b** KV headroom/offload: requires a before/after tok/s receipt.

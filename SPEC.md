@@ -26,13 +26,18 @@ human-only.
 ## Evidence envelope (owner-directed 2026-10-04, sidecar design (a))
 
 `artifacts/envelope.jsonl` — one mandatory, schema-validated record per real
-worker invocation (plus `run_manifest` and `gate` records), keyed by
-`run_id` + ledger head. Hashes only: no prompt bodies, source contents,
+worker invocation (plus `run_manifest` and `gate` records), carrying
+`run_id`, ledger head, lifecycle id, and a per-record hash chain
+(`prev_record_sha256`, verified by reconcile). Hashes only: no prompt bodies,
+source contents,
 diffs, or secrets. Emission is mandatory (invalid record or append failure
 raises) — NOT best-effort telemetry. `pipeline.envelope.reconcile()` is the
 deterministic F-004 report: declared workers (manifest) vs observed
-`worker_call` records vs produced artifacts; a missing, mismatched, or
-contradictory record is an evidence failure, never "not applicable".
+`worker_call` records vs produced artifacts — a missing, mismatched, or
+contradictory record is an evidence failure, never "not applicable" — plus
+sidecar chain integrity, manifest divergence, gate-without-evidence,
+retry-aware sequencing, ledger_head membership, and human-gate bypass
+checks (repair step 6, 2026-10-04).
 Operationally separate from the ledger and artifact contracts; preserved
 into the drill evidence bundle with the other artifacts. Deferred (b):
 promoting selected envelope fields into per-phase gate artifacts, only if
@@ -40,13 +45,31 @@ reconciliation proves insufficient after several runs.
 
 ## Artifact contracts
 - `artifacts/intake.json` — problem, constraints, acceptance criteria, `required_imports` machine contract (`contracts/intake.schema.json`)
-- `artifacts/plan.json` — tasks decompose acceptance criteria 1:1; deps acyclic; `required_imports` propagated byte-identical from intake (`contracts/plan.schema.json`)
-- `artifacts/diff/manifest.json` — one diff per plan task, with scope (`contracts/diff_manifest.schema.json`)
-- `artifacts/review.md` — one `## TASK-n` section per diff; every issue RESOLVED or WAIVED-with-reason
-- `artifacts/test.log` — full test output; no silent skips; passing summary required
-- `artifacts/imports.json` — required-import AST evidence: owner defines, static unaliased import, no shadow (required whenever intake declares `required_imports`)
-- `artifacts/verification.md` — traceability matrix: every acceptance criterion -> passing evidence
+- `artifacts/plan.json` — tasks decompose acceptance criteria 1:1; deps acyclic; `required_imports` propagated byte-identical from intake; every task declares a non-empty `scope`; scopes never overlap (`contracts/plan.schema.json`)
+- `artifacts/diff/manifest.json` — one diff per plan task, with scope; carries the lifecycle id (`contracts/diff_manifest.schema.json`)
+- `artifacts/review.md` — one anchored `## TASK-n` section per diff; every issue line matches the strict grammar `- issue: <desc> — RESOLVED (<reason>)` or `— WAIVED: <reason>`; OPEN/malformed/negated lines fail the gate; mechanical import contradictions gate directly from `artifacts/diff/TASK-n.mechanical.json`, never via markdown
+- `artifacts/test.log` — pipeline-owned header (COMMAND, EXIT_CODE — exactly one, integer — DURATION_S, SKIPS/SKIP declarations) plus worker-controlled stdout/stderr; the gate parses the header only; skips pass only when header-declared with non-empty reasons and count-matched to pytest's summary (owner ruling F-02)
+- `artifacts/imports.json` — required-import AST evidence: owner defines, static unaliased absolute import, exercised by bare call, no shadow in any scope, no sys.path shadow module, no rebinding/monkeypatching (required whenever intake declares `required_imports`)
+- `artifacts/verification.md` — traceability matrix: first cell equals each acceptance criterion exactly; verdict cell is exactly PASS or FAIL
 - `artifacts/validation.md` — SIGN-OFF block; the decision itself is a human ledger event, never file content
+
+## Repair-program rules (owner-scoped 2026-10-04; reconciliation register:
+docs/review-reconciliation-20261004.md)
+
+- Human-gate integrity: no `gate_open` never means approved; `gate_open` is
+  emitted with `complete`; `stop_after` leaves an opened gate; a crash window
+  is repaired on resume; a deny is terminal and distinct (`denied:<phase>`).
+- Ledger authority: legacy prefix sealed (legacy-seal-v1); contiguous seq;
+  lifecycle identity on every row; a done lifecycle refuses a second run
+  (`lifecycle_complete:<id>`); completions and approvals bind artifact SHA-256;
+  worker failures are ledgered (`worker_failed`).
+- Evidence integrity: envelope records are hash-chained and reconciled for
+  chain integrity, manifest divergence, gate-without-evidence, retry-aware
+  sequencing, ledger_head membership, and human-gate bypass; standby
+  snapshots require anti-rollback ancestry and receipt cross-checks.
+- Worker boundary: pre-existing target configuration is preserved
+  byte-identically; worker JSON is extracted string-aware with duplicate-key
+  rejection; judging phases leave HEAD and ignored files untouched.
 
 (2026-10-03: plan.md became plan.json — the 1:1 and acyclicity invariants are
 machine-checked by gates, which requires a schema-validatable format.)

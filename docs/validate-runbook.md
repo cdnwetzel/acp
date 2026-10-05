@@ -1,11 +1,16 @@
 # VALIDATE Runbook — Human-Only Production-Shaped Validation
 
-Status: **APPROVED 2026-10-04 (owner review; corrections applied).** Owner
-review returned two P1 corrections (safely copyable approval command;
+Status: **APPROVED 2026-10-04 (owner review; corrections applied); amended
+2026-10-04 after the repair program (steps 1–6) to match the repaired code.**
+Owner review returned two P1 corrections (safely copyable approval command;
 hash-manifest staleness instead of mtime-only) and two P2 improvements
 (decision-event identity in the exercise row; operator identity in the
-receipt), all applied in this revision. Exactly one witnessed validation
-exercise is authorized, conducted against this approved text unchanged.
+receipt), all applied. The first witnessed exercise was authorized and
+attempted; it aborted pre-gate on two PLAN worker contract failures (ledger
+72). The subsequent three-way review (orchestrator + baseline + adversarial +
+Codex repro package) found the substrate defects this amendment reflects.
+Re-authorization of a fresh exercise awaits the step-8 requalification
+battery.
 
 Scope: the VALIDATE phase of one ACP lifecycle run. VALIDATE is human-only by
 construction — the phase produces a sign-off *document*; the decision is a
@@ -88,16 +93,18 @@ Before the decision, the agent assembles and the operator verifies:
 6. Envelope: one `worker_call` record per real worker invocation, redacted
    command field (`<prompt_sha256:…>`), hashes only — no prompt bodies, no
    diffs, no secrets.
-7. Staleness (hash-bound): at each gate completion the agent captures a
-   SHA-256 manifest of that phase's artifacts —
+7. Staleness (hash-bound, code-enforced): the runner binds every artifact's
+   SHA-256 into the `complete` and `gate_open` ledger rows, the approvals CLI
+   binds it into the decision row and refuses to decide on drifted bytes, and
+   resume re-verifies — a post-gate mutation raises GateError before any
+   continuation. The operator-visible belt-and-braces: at each gate
+   completion the agent may additionally capture
    `shasum -a 256 <artifact paths> > artifacts/sha256sums-<phase>.txt`
-   (`sha256sum` on the NUC11/Linux). Before the VALIDATE decision the agent
-   re-verifies every manifest with `shasum -a 256 -c
-   artifacts/sha256sums-<phase>.txt`; any mismatch means the artifact changed
-   after its gate — that gate is stale, the exercise aborts (§5). Artifact
-   mtime versus the gate's `complete` ledger row is kept as an early-warning
-   check only; it is never the authoritative check, because timestamps can be
-   preserved, coarse, or changed without proving content identity.
+   (`sha256sum` on the NUC11/Linux) and re-verify with `shasum -a 256 -c`
+   before the decision. Artifact mtime versus the gate's `complete` ledger
+   row is an early-warning check only; it is never the authoritative check,
+   because timestamps can be preserved, coarse, or changed without proving
+   content identity.
 
 ## 4. Production-shaped validation steps
 
@@ -122,8 +129,12 @@ Any one of these aborts the exercise (before the decision) or forces a deny:
 - chain verification fails at any point;
 - envelope reconciliation reports any finding;
 - a required artifact is missing, unparseable, or stale (§3.7);
-- `test.log` lacks a recorded zero exit code, shows failures/errors, or hides
-  a skip;
+- `test.log` lacks a recorded zero exit code in its pipeline-owned header,
+  shows failures/errors in the pytest summary line, or carries skips without
+  matching `SKIPS:`/`SKIP:` header declarations;
+- `runner.run_all()` returns `denied:<phase>` (a terminal human denial) or
+  `lifecycle_complete:<id>` (the ledger's lifecycle is closed) — both are
+  stop conditions, never things to work around;
 - any acceptance criterion untraced, or traced to FAIL;
 - any claim in any artifact marked or found to be UNVERIFIED;
 - the operator was not the person running the approval command;
@@ -164,14 +175,21 @@ Structural facts, checkable at any time:
    `NotImplementedError`. There is no real-worker path to impersonate.
 2. The only code path that emits `human_approve`/`human_deny` is
    `pipeline/approvals.py`'s CLI, which requires an explicit operator command
-   with a non-empty reason.
+   with a non-empty reason, an open undecided gate, and the gate artifact's
+   current bytes (drift is refused). Validation is explicit code — `python -O`
+   strips nothing (ADV-016 regression tests).
 3. `gate_validate` accepts only a SIGN-OFF block *in the artifact*; the
    artifact cannot approve anything — the runner stops at `gate_open:validate`
    until a `human_approve` ledger row exists after the latest `gate_open`.
+   No-`gate_open` never means approved (C-1): `gate_open` is emitted with
+   `complete`, the crash window is repaired on resume, `stop_after` leaves
+   an opened gate, and a deny is terminal (`denied:<phase>`).
 4. The eval lane cannot open any gate (tested: planted all-green results
    change no gate verdict).
-5. Envelope `gate` records for validate show the pass only after the human
-   event; a missing human row with a passed gate is a reconciliation finding.
+5. Envelope `gate` records for a human-gated phase that the lifecycle moved
+   PAST without a `human_approve` row are a reconciliation finding
+   (`HUMAN_GATE_BYPASSED`); the artifact-gate `pass` record itself is emitted
+   when the artifact gate runs. A run parked at an open gate is clean.
 
 ## 8. Post-run receipt and artifact preservation
 

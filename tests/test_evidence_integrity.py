@@ -175,3 +175,28 @@ def test_diff_consumes_committed_index(tmp_path):
         harness.diff(os.path.join(tmp_path / "res", r1["run_id"] + ".jsonl"),
                      "b1", baselines_dir=str(tmp_path / "base"),
                      index_path=str(tmp_path / "index.json"))
+
+
+def test_human_gate_bypass_is_a_reconcile_failure(tmp_path, monkeypatch):
+    """M-13/runbook §7.5: gate pass + lifecycle advanced past the gate with
+    no human_approve is an evidence failure."""
+    monkeypatch.chdir(tmp_path)
+    state.emit("intake", "started")
+    state.emit("intake", "complete")
+    state.emit("intake", "gate_open")
+    state.emit("plan", "started")   # lifecycle advanced past the open gate
+    state.emit("plan", "complete")
+    envelope.emit_run_manifest({"intake": "mock", "plan": "mock"})
+    envelope.emit_gate("intake", "pass")
+    rep = envelope.reconcile()
+    assert any("HUMAN_GATE_BYPASSED" in f for f in rep["failures"])
+
+def test_parked_at_open_gate_is_not_a_failure(tmp_path, monkeypatch):
+    """A run parked at an open human gate awaiting the operator is clean."""
+    monkeypatch.chdir(tmp_path)
+    state.emit("intake", "started")
+    state.emit("intake", "complete")
+    state.emit("intake", "gate_open")
+    envelope.emit_run_manifest({"intake": "mock"})
+    envelope.emit_gate("intake", "pass")
+    assert envelope.reconcile()["ok"], envelope.reconcile()["failures"]

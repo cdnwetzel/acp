@@ -4,7 +4,8 @@ sidecar design (a) with the tightening: NOT best-effort telemetry).
 
 Properties:
 - operationally separate from the ledger (state.jsonl) and artifact contracts
-  — a sidecar at artifacts/envelope.jsonl, keyed by run_id + ledger_head;
+  — a sidecar at artifacts/envelope.jsonl; records carry run_id, ledger_head,
+  lifecycle id, and a per-record hash chain (prev_record_sha256);
 - every record is schema-validated BEFORE append; an invalid record or an
   append failure raises (emission is mandatory, not optional);
 - hashes only: no prompt bodies, source contents, diffs, or secrets;
@@ -310,6 +311,32 @@ def reconcile(artifacts_dir="artifacts"):
         report["failures"].append(
             f"STALE_RECORD: {len(foreign)} distinct ledger_head value(s) are not "
             f"row hashes of the ledger at {ledger_path} — stale or foreign envelope")
+    # 6. M-13/runbook §7.5: a passed artifact gate for a HUMAN-gated phase
+    #    whose lifecycle ADVANCED without a human_approve row is an evidence
+    #    failure. (A run parked at an open gate awaiting the human is fine.)
+    if ledger_present:
+        from pipeline.runner import HUMAN_GATES, ORDER
+        lc_rows = state.rows(ledger_path)
+        lc_done = any(r.get("phase") == "lifecycle" and r.get("event") == "done"
+                      for r in lc_rows)
+        for g in gates:
+            ph = g.get("phase")
+            if g.get("gate_result") != "pass" or ph not in HUMAN_GATES:
+                continue
+            opens = [i for i, r in enumerate(lc_rows)
+                     if r["phase"] == ph and r["event"] == "gate_open"]
+            approved = bool(opens) and any(
+                r["event"] == "human_approve"
+                for r in lc_rows[opens[-1] + 1:] if r["phase"] == ph)
+            if approved:
+                continue
+            advanced = lc_done or any(
+                r.get("event") == "complete" and r.get("phase") in ORDER
+                and ORDER.index(r["phase"]) > ORDER.index(ph) for r in lc_rows)
+            if advanced:
+                report["failures"].append(
+                    f"HUMAN_GATE_BYPASSED: gate {ph} passed and the lifecycle "
+                    f"advanced, but no human_approve follows its latest gate_open")
     report["checks"] = {"declared_real_phases": sorted(p for p, k in declared.items()
                                                        if k != "mock"),
                         "worker_calls": len(calls), "gate_records": len(gates),
