@@ -31,7 +31,7 @@ No area below is closed until its required evidence exists.
 1. ~~C5 standby and recovery pass.~~ **PASS 2026-10-04** (ledger row 66) — awaiting no further evidence; closure recorded.
 2. ~~Eval corpus implemented; three baseline runs stable.~~ **PASS 2026-10-04** (ledger rows 67–68).
 3. ~~Holdout review completed.~~ **DONE 2026-10-04, scope-limited acceptance** (ledger row 69).
-4. Human VALIDATE runbook exercised — **BLOCKED**: runbook approved with corrections (ledger 71); first witnessed exercise authorized and attempted, aborted pre-gate on two PLAN worker contract failures (ledger 72); repair program followed (steps 1–7, ledger 77–85); requalification battery ran 5/6 green with the lifecycle item paused (ledger 87) pending the PLAN correction's regression evidence. Battery restarted 2026-10-06 (owner, ledger 94): items 1–3 green; lifecycle stopped at REVIEW then VERIFY across three attempts (ledger 95/97/99 — model formatting defects, all caught fail-closed). REVIEW disposition grammar amended (case-insensitive, e9a8673, ledger 98); VERIFY prompt hardened (pipe rules, bbe19e8, ledger 100). Next: temperature experiment (pxx 2.6.4 `Settings.temperature`), then requalification under the selected configuration, then one witnessed exercise against the runbook.
+4. Human VALIDATE runbook exercised — **PARKED AT THE GATE**: runbook approved with corrections (ledger 71); first witnessed exercise authorized and attempted, aborted pre-gate on two PLAN worker contract failures (ledger 72); repair program followed (steps 1–7, ledger 77–85); requalification battery ran 5/6 green with the lifecycle item paused (ledger 87) pending the PLAN correction's regression evidence. Battery restarted 2026-10-06 (owner, ledger 94): items 1–3 green; lifecycle stopped at REVIEW then VERIFY across three attempts (ledger 95/97/99 — model formatting defects, all caught fail-closed). REVIEW disposition grammar amended (case-insensitive, e9a8673, ledger 98); VERIFY prompt hardened (pipe rules, bbe19e8, ledger 100). The 2×2 experiment found the dominant blocker was an evidentiary gap (ledger 103) — fixed via pytest `-v` (3ece41c, ledger 104); v2 arms 31/48, temp 0 = 20/24 (ledger 105); requalification config locked to hardened prompt + temp 0 (788aa62, ledger 106). The requalification lifecycle then completed intake→verify (one infra stop, one stochastic 14B VERIFY stop + probe + single bounded retry; ledger 107–109) and is **PARKED at `gate_open:validate`** (ledger 110; bundle `/tmp/acp-preserved/validate-exercise-parked-20261006-171753`). Next: the witnessed human VALIDATE against this parked lifecycle — owner-only, NOT yet re-authorized.
 5. Envelope and ledger restoration verified — substantially evidenced (C5 kill −9, simulated loss, seal migration, reconcile hardening); re-confirm against the repaired code during requalification.
 6. Runtime and retrieval-security caveats recorded.
 7. Chris makes the final promotion decision.
@@ -48,12 +48,15 @@ No area below is closed until its required evidence exists.
   case-insensitive per owner ruling, e9a8673, row 98) and VERIFY table
   formatting (bold-decoration 10-04 → shared cell parser; missing leading
   pipes 10-06 → prompt hardened with explicit pipe rules, bbe19e8, row 100;
-  parser stays strict). PENDING — the temperature experiment: pxx 2.6.4
-  `Settings.temperature` (c14da78) run as a 2×2 (prompt × temperature,
-  12 samples/arm) or the hardened-prompt + temperature-0 combined
-  intervention, then requalification under the selected configuration.
-  Earlier temperature-1 results do not transfer. VALIDATE stays locked;
-  any battery/requalification restart remains an owner decision.
+  parser stays strict). RESOLVED 2026-10-06 — the 2×2 ran (rows 103/105):
+  v1 0/48 exposed the TEST/VERIFY evidentiary gap (fixed: pytest `-v`,
+  3ece41c, row 104); v2 with the `-v` log scored 31/48, temp 0 = 20/24 vs
+  temp 1 = 11/24, zero formatting-class defects at temp 0. Requalification
+  config locked: hardened prompt + `temperature = 0.0` in ISOLATION_TOML
+  (788aa62, row 106). The requalification lifecycle reached
+  `gate_open:validate` and is parked (row 110). Earlier temperature-1
+  results do not transfer. VALIDATE stays locked; the witnessed exercise
+  against the parked lifecycle remains an owner decision.
 
 ## Explicit deferrals (not silently forgotten)
 

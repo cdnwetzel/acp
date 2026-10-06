@@ -96,7 +96,7 @@ python3 -m pipeline.approvals <gate> approve|deny "reason"
 # gates: intake | plan | validate
 ```
 
-**Current test status (2026-10-06): 279 passed, 0 failed**
+**Current test status (2026-10-06): 285 passed, 0 failed**
 (`python3 -m pytest tests/ -q`). C6 (2026-10-03) landed hash-chaining;
 the 2026-10-04 repair program added the legacy-prefix seal (row 78),
 lifecycle identity, hash-bound approvals, strict gate parsers, envelope
@@ -339,6 +339,27 @@ program; steps 1–6 landed:
    surface. PENDING: the 2×2 experiment (prompt × temperature, 12/arm),
    then requalification under the selected configuration. VALIDATE stays
    locked; earlier temperature-1 results do not transfer.
+10. 2×2 → evidentiary-gap fix → requalification parked (2026-10-06, ledger
+   101–110): the 2×2 v1 scored 0/48 — the dominant blocker was an
+   EVIDENTIARY GAP (criteria demanded named test IDs the dots-only log
+   could not show), not formatting or temperature (row 103). Owner-approved
+   fix: TEST runs pytest `-v` (3ece41c, row 104; intake prompt aligned to
+   the log's actual content). V2 arms with the `-v` log: 31/48 conformant,
+   temp 0 = 20/24 vs temp 1 = 11/24, zero formatting defects at temp 0,
+   receipts 48/48 (row 105). Owner ruling: requalification config =
+   hardened prompt + `temperature = 0.0` in ISOLATION_TOML (788aa62, row
+   106). Requalification: run 1 infra-stopped at REVIEW (LAN route to
+   Asrock down from the remote host; the supervised forward
+   `127.0.0.1:11435 -> 10.0.1.115:11434` via ai.cwetzel.com is the
+   remote-access path — drill-copy config only, row 107); run 2 went five
+   phases green then VERIFY-stopped on 14B pipeless rows (row 108);
+   determinism probe 3/3 conformant → stochastic (row 109); ONE bounded
+   resume-retry → VERIFY green, lifecycle PARKED at `gate_open:validate`
+   (row 110, bundle `/tmp/acp-preserved/validate-exercise-parked-20261006-171753`).
+   NEXT: witnessed human VALIDATE per `docs/validate-runbook.md` —
+   owner-only, NOT yet re-authorized. Config-attribution caveat: the arms
+   measured the 27B; the lifecycle VERIFY worker is the Asrock 14B — arms
+   numbers do not transfer (ledgered, row 108).
 
 Acceptance meter: the Codex repro package went from 5/24 to 24/24 passing
 against repaired HEAD, including its end-to-end gate_test injection.
