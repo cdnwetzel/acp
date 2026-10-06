@@ -31,27 +31,29 @@ No area below is closed until its required evidence exists.
 1. ~~C5 standby and recovery pass.~~ **PASS 2026-10-04** (ledger row 66) — awaiting no further evidence; closure recorded.
 2. ~~Eval corpus implemented; three baseline runs stable.~~ **PASS 2026-10-04** (ledger rows 67–68).
 3. ~~Holdout review completed.~~ **DONE 2026-10-04, scope-limited acceptance** (ledger row 69).
-4. Human VALIDATE runbook exercised — **BLOCKED**: runbook approved with corrections (ledger 71); first witnessed exercise authorized and attempted, aborted pre-gate on two PLAN worker contract failures (ledger 72); repair program followed (steps 1–7, ledger 77–85); requalification battery ran 5/6 green with the lifecycle item paused (ledger 87) pending the PLAN correction's regression evidence (below — correction implemented 2026-10-05, arms evidence pending). Requalification restart, then one witnessed exercise against the runbook.
+4. Human VALIDATE runbook exercised — **BLOCKED**: runbook approved with corrections (ledger 71); first witnessed exercise authorized and attempted, aborted pre-gate on two PLAN worker contract failures (ledger 72); repair program followed (steps 1–7, ledger 77–85); requalification battery ran 5/6 green with the lifecycle item paused (ledger 87) pending the PLAN correction's regression evidence. Battery restarted 2026-10-06 (owner, ledger 94): items 1–3 green; lifecycle stopped at REVIEW then VERIFY across three attempts (ledger 95/97/99 — model formatting defects, all caught fail-closed). REVIEW disposition grammar amended (case-insensitive, e9a8673, ledger 98); VERIFY prompt hardened (pipe rules, bbe19e8, ledger 100). Next: temperature experiment (pxx 2.6.4 `Settings.temperature`), then requalification under the selected configuration, then one witnessed exercise against the runbook.
 5. Envelope and ledger restoration verified — substantially evidenced (C5 kill −9, simulated loss, seal migration, reconcile hardening); re-confirm against the repaired code during requalification.
 6. Runtime and retrieval-security caveats recorded.
 7. Chris makes the final promotion decision.
 
 ## Interruptions (open, blocking)
 
-- **PLAN reliability (ledger 87–88)**: three distinct PLAN contract defects
-  in four attempts. Diagnosis (`docs/plan-reliability-diagnosis-20261004.md`):
-  pxx's injected coding-agent system prompt (+9 tool schemas) is the
-  degradant — bare contract prompt 12/12 conformant vs 4/12 with the pxx
-  context; temperature, truncation, proxy, model, and ACP config ruled out
-  (full measurement detail, including the rescore, is in the diagnosis doc).
-  Owner decision MADE 2026-10-05: pxx bare mode. IMPLEMENTED — pxx 7360533
-  (v2.6.2, CI green, released to PyPI) + ACP a4716aa (ledger 90).
-  LIVE VERIFIED — smoke probes with audit payload receipts. PENDING —
-  Phase 4 regression evidence: isolation arms through pxx, 12 samples/arm,
-  expecting ~12/12 on the bare arm (abort condition: anything less stops
-  the program). Requalification battery and the VALIDATE exercise stay
-  blocked until that evidence lands; battery restart remains an owner
-  decision.
+- **Contract-conformance reliability (ledger 87–100)**: three distinct PLAN
+  contract defects in four attempts led to the pxx bare-mode correction
+  (v2.6.2, ledger 90; Phase 4 arms bare 11/12 vs default 10/12, receipts
+  24/24 — attribution caveat, row 93). Battery restart (owner, row 94) then
+  surfaced a broader pattern: temperature-1.0 strict textual contracts
+  produce repeated byte-level formatting defects across phases — REVIEW
+  `RESOLVED`→`RESolved` casing slips (2/2 runs; grammar amended
+  case-insensitive per owner ruling, e9a8673, row 98) and VERIFY table
+  formatting (bold-decoration 10-04 → shared cell parser; missing leading
+  pipes 10-06 → prompt hardened with explicit pipe rules, bbe19e8, row 100;
+  parser stays strict). PENDING — the temperature experiment: pxx 2.6.4
+  `Settings.temperature` (c14da78) run as a 2×2 (prompt × temperature,
+  12 samples/arm) or the hardened-prompt + temperature-0 combined
+  intervention, then requalification under the selected configuration.
+  Earlier temperature-1 results do not transfer. VALIDATE stays locked;
+  any battery/requalification restart remains an owner decision.
 
 ## Explicit deferrals (not silently forgotten)
 

@@ -96,7 +96,7 @@ python3 -m pipeline.approvals <gate> approve|deny "reason"
 # gates: intake | plan | validate
 ```
 
-**Current test status (2026-10-05): 270 passed, 0 failed**
+**Current test status (2026-10-06): 279 passed, 0 failed**
 (`python3 -m pytest tests/ -q`). C6 (2026-10-03) landed hash-chaining;
 the 2026-10-04 repair program added the legacy-prefix seal (row 78),
 lifecycle identity, hash-bound approvals, strict gate parsers, envelope
@@ -321,10 +321,24 @@ program; steps 1–6 landed:
    ledger 88). Correction LANDED 2026-10-05: pxx bare mode — IMPLEMENTED at
    pxx 7360533 (v2.6.2, CI green, released to PyPI) and ACP a4716aa
    (ledger 90); LIVE VERIFIED by smoke probes (bare vs default audit
-   receipts in pxx's hash-chained stream). PENDING: Phase 4 regression
-   evidence (isolation arms through pxx, 12 samples/arm) before any
-   battery restart. VALIDATE stays locked; battery restart is an owner
-   decision.
+   receipts in pxx's hash-chained stream).
+9. Battery restart + REVIEW amendment + VERIFY hardening (2026-10-06,
+   ledger 94–100): Phase 4 arms measured bare 11/12 vs default 10/12,
+   receipts 24/24 (attribution caveat ledgered, row 93; bundle
+   `/tmp/acp-preserved/arms-20261005-223810/`). Owner authorized the battery
+   restart (row 94). Items 1–3 green; the lifecycle stopped at REVIEW
+   (`RESOLVED`→`RESolved` casing slip) and the bounded retry REPRODUCED it
+   (2/2 runs, one slip per file — a model formatting attractor, rows 95/97).
+   Owner ruling: disposition token case-insensitive (e9a8673, row 98) — a
+   contract amendment, not a weakening. Next lifecycle: 5 phases green
+   (REVIEW passed under the amendment), stopped at VERIFY — data rows
+   missing leading pipes (row 99). Owner ruling (option 3): VERIFY prompt
+   hardened with explicit pipe rules (bbe19e8, row 100); NO temperature-1
+   retry; the temperature experiment runs as a separate measurement. pxx
+   2.6.4 (`Settings.temperature`, c14da78) supplies the deterministic
+   surface. PENDING: the 2×2 experiment (prompt × temperature, 12/arm),
+   then requalification under the selected configuration. VALIDATE stays
+   locked; earlier temperature-1 results do not transfer.
 
 Acceptance meter: the Codex repro package went from 5/24 to 24/24 passing
 against repaired HEAD, including its end-to-end gate_test injection.

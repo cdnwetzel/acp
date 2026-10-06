@@ -13,10 +13,14 @@ the step 1–6 amendments reflect. The requalification battery then ran 5/6
 green; its lifecycle item is paused pending the PLAN correction's
 regression evidence (`docs/plan-reliability-diagnosis-20261004.md`,
 ledger 87–88). The correction itself LANDED 2026-10-05 (pxx bare mode,
-pxx 7360533 / v2.6.2; ACP a4716aa, ledger 90); Phase 4 isolation-arm
-evidence is still PENDING. Re-authorization of a fresh exercise awaits
-Phase 4 plus the completed battery and remains an owner decision — the
-exercise is NOT currently authorized.
+pxx 7360533 / v2.6.2; ACP a4716aa, ledger 90). Battery restart (owner,
+ledger 94) ran 2026-10-06: items 1–3 green; the lifecycle item stopped at
+REVIEW (casing slip, reproduced 2/2 — grammar amended case-insensitive,
+e9a8673, ledger 98), then at VERIFY (pipeless table rows — prompt hardened,
+bbe19e8, ledger 100). Next gate on any fresh exercise: the temperature
+experiment (pxx 2.6.4 `Settings.temperature`) plus requalification under
+the selected configuration. Re-authorization remains an owner decision —
+the exercise is NOT currently authorized.
 
 Scope: the VALIDATE phase of one ACP lifecycle run. VALIDATE is human-only by
 construction — the phase produces a sign-off *document*; the decision is a
