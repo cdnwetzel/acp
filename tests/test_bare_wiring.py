@@ -53,6 +53,17 @@ def test_bare_toml_adds_bare_true_base_stays_agentic():
     assert w.ISOLATION_TOML_BARE.startswith(w.ISOLATION_TOML)
     assert "clarity_gate = false" in w.ISOLATION_TOML_BARE  # base carried through
 
+def test_isolation_toml_pins_temperature_zero(tmp_path):
+    """Owner ruling 2026-10-06 (ledger seq 105): contract-bound phases run at
+    temperature 0.0 — the deterministic surface measured 20/24 vs 11/24.
+    Pinned in the BASE so both the bare ask/plan path and code.py's `pxx run`
+    path carry it; every transcript embeds the config as evidence."""
+    assert "temperature = 0.0" in w.ISOLATION_TOML
+    assert "temperature = 0.0" in w.ISOLATION_TOML_BARE
+    iso, restore = w.isolation_write(str(tmp_path))
+    assert "temperature = 0.0" in open(iso).read()
+    restore()
+
 def test_isolation_write_defaults_to_base_toml(tmp_path):
     iso, restore = w.isolation_write(str(tmp_path))
     assert open(iso).read() == w.ISOLATION_TOML

@@ -20,6 +20,13 @@ ISOLATION_TOML = (
     "# transcript embeds this exact config as evidence. Disabling it here cannot\n"
     "# widen scope, permissions, budgets, routing, or any downstream ACP gate.\n"
     "clarity_gate = false\n"
+    "# temperature = 0.0 (pxx 2.6.4, owner ruling 2026-10-06): contract-bound\n"
+    "# phases run on the deterministic generation surface. The 2x2 experiment\n"
+    "# (ledger seq 103/105) measured 20/24 conformant at temp 0 vs 11/24 at\n"
+    "# temp 1 with ZERO formatting-class defects in every temp-0 arm; the\n"
+    "# pxx audit stream's model_request.temperature field is the per-call\n"
+    "# receipt. Applies to the ask/plan variant below and `pxx run` alike.\n"
+    "temperature = 0.0\n"
 )
 
 # Ask/plan-only variant (pxx 7360533 / v2.6.2, owner-approved 2026-10-05).
