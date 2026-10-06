@@ -28,14 +28,28 @@ def test_review_strict_grammar_accepts_compliant(tmp_path, monkeypatch):
     assert _review("## TASK-1\n- issue: minor naming — RESOLVED (renamed)\n"
                    "- issue: perf — WAIVED: out of scope per plan\n")
 
+def test_review_disposition_token_is_case_insensitive(tmp_path, monkeypatch):
+    """Owner ruling 2026-10-06: casing carries no semantic safety property.
+    Case variants of the disposition token pass with structure and non-empty
+    reason intact; the parsed disposition canonicalizes to RESOLVED/WAIVED."""
+    _setup(tmp_path, monkeypatch, tasks=("TASK-1", "TASK-2", "TASK-3"))
+    assert _review("## TASK-1\n- issue: none — RESOLVED (diff satisfies the criterion)\n"
+                   "## TASK-2\n- issue: none — RESolved (diff satisfies the criterion)\n"
+                   "## TASK-3\n- issue: none — resolved (diff satisfies the criterion)\n")
+    _setup(tmp_path, monkeypatch)
+    assert _review("## TASK-1\n- issue: perf — Waived: out of scope per plan\n"
+                   "- issue: style — waived: cosmetic only\n")
+
 @pytest.mark.parametrize("bad", [
     "- issue: plaintext password — NOT RESOLVED, still open",   # G1a
     "- issue: plaintext password — WAIVED:",                    # G1b empty reason
+    "- issue: plaintext password — waived:",                    # empty reason, any casing
     "- issue: x — RESOLVED ()",                                 # empty resolved reason
-    "- issue: x — resolved (lowercase)",                        # case-sensitive enum
+    "- issue: x — RESolved ()",                                 # empty reason, mixed case
     "* Issue: SQL injection in login",                          # G1d format
     "1. issue: numbered bullet",                                # numbered variant
     "- issue: explicitly open — OPEN: needs owner",             # OPEN is unresolved
+    "- issue: explicitly open — open: needs owner",             # OPEN, any casing
 ])
 def test_review_rejects_near_misses(tmp_path, monkeypatch, bad):
     _setup(tmp_path, monkeypatch)

@@ -82,7 +82,12 @@ def gate_review(r="artifacts/review.md", m="artifacts/diff/manifest.json"):
       never satisfies TASK-1);
     - any issue-like line must parse as one finding with an enum disposition
       and a non-empty reason: '— RESOLVED (<reason>)' or '— WAIVED: <reason>';
-      OPEN, negated, empty-reason, wrapped, or misformatted lines all fail;
+      the disposition TOKEN is case-insensitive (owner ruling 2026-10-06:
+      casing carries no semantic safety property — the controls are the
+      vocabulary, the required reason, complete coverage, and fail-closed
+      parsing; the parsed disposition is canonicalized to RESOLVED/WAIVED and
+      review.md is never rewritten); OPEN, negated, empty-reason, wrapped,
+      or misformatted lines all fail;
     - mechanical import-resolution contradictions fail the gate DIRECTLY from
       the machine-written mechanical.json — worker text never mediates them."""
     txt = open(r).read() if os.path.exists(r) else ""
@@ -99,7 +104,11 @@ def gate_review(r="artifacts/review.md", m="artifacts/diff/manifest.json"):
             continue
         if not s.startswith("issue:"):
             raise GateError(f"malformed issue line (case/format): {line.strip()[:70]}")
-        disp = re.search(r"\s—\s(?:RESOLVED \(([^)]*)\)|WAIVED: (.*\S)|OPEN: (.*))$", s)
+        # Disposition token is case-insensitive (owner ruling 2026-10-06);
+        # the match position determines the canonical disposition:
+        # group 1 -> RESOLVED, group 2 -> WAIVED, group 3 -> OPEN.
+        disp = re.search(r"\s—\s(?:RESOLVED \(([^)]*)\)|WAIVED: (.*\S)|OPEN: (.*))$",
+                         s, re.IGNORECASE)
         if not disp:
             raise GateError(f"unresolved review issue: {s[:70]}")
         if disp.group(1) is not None and not disp.group(1).strip():
