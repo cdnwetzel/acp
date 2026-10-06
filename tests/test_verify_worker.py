@@ -65,6 +65,19 @@ def test_untraced_criteria_genuinely_exact_passes():
     doc = f"# verification.md\n\n| {AC} | test.log | PASS |\n"
     assert verify._untraced_criteria(doc, [AC]) == []
 
+def test_untraced_criteria_catches_missing_leading_pipe():
+    """2026-10-06 stop class: header row piped, data rows not — the criterion
+    is byte-present in the row text but not in a pipe-delimited CELL, so it
+    is untraced. The parser stays strict; it never searches raw text."""
+    doc = ("# verification.md\n\n"
+           "| acceptance criterion | evidence | verdict |\n|---|---|---|\n"
+           f"{AC} | test.log | PASS |\n")
+    assert verify._untraced_criteria(doc, [AC]) == [AC]
+
+def test_untraced_criteria_catches_missing_trailing_pipe():
+    doc = f"# verification.md\n\n| {AC} | test.log | PASS\n"
+    assert verify._untraced_criteria(doc, [AC]) == [AC]
+
 def _fake_bare_pxx(tmp_path, monkeypatch, ask_stdout):
     """Hermetic pxx for the bare-mode wiring (2026-10-05): --version answers
     2.6.2, the ask returns ask_stdout, and the audit stream evidences a bare
@@ -128,6 +141,54 @@ def test_run_pxx_refuses_decorated_criterion_before_write(tmp_path, monkeypatch)
     with pytest.raises(WorkerError, match="verbatim traceability"):
         verify.run(worker="pxx")
     assert not os.path.exists("artifacts/verification.md")  # no partial artifact
+
+def test_run_pxx_refuses_pipeless_data_rows_before_write(tmp_path, monkeypatch):
+    """Phase-level (2026-10-06 stop): piped header + pipeless data rows are
+    refused BEFORE write — no partial artifact ever lands."""
+    monkeypatch.chdir(tmp_path)
+    os.makedirs("artifacts/diff")
+    json.dump({"acceptance_criteria": [AC]}, open("artifacts/intake.json", "w"))
+    open("artifacts/test.log", "w").write("COMMAND: pytest\nEXIT_CODE: 0\nDURATION_S: 1\n1 passed\n")
+    json.dump({"diffs": []}, open("artifacts/diff/manifest.json", "w"))
+    open("artifacts/review.md", "w").write("# review.md\n")
+    bad_doc = ("# verification.md\n\n"
+               "| acceptance criterion | evidence | verdict |\n|---|---|---|\n"
+               + AC + " | t | PASS |\n\n## Limitations\n\n- x\n")
+    _fake_bare_pxx(tmp_path, monkeypatch, "[COMPLETED]\n" + bad_doc + OUTCOME_SESSION)
+    monkeypatch.setattr(verify, "assert_independence", lambda *a, **kw: None)
+    monkeypatch.setattr(verify, "check_access", lambda ep: None)
+    import pipeline.endpoints as endpoints
+    monkeypatch.setattr(endpoints, "resolve", lambda phase: EP)
+    with pytest.raises(WorkerError, match="verbatim traceability"):
+        verify.run(worker="pxx")
+    assert not os.path.exists("artifacts/verification.md")  # no partial artifact
+
+def test_prompt_demands_pipe_delimited_rows(tmp_path, monkeypatch):
+    """The prompt IS the contract (owner, 2026-10-06): the explicit pipe
+    rules must be present in what the worker actually sends."""
+    monkeypatch.chdir(tmp_path)
+    os.makedirs("artifacts/diff")
+    json.dump({"acceptance_criteria": [AC]}, open("artifacts/intake.json", "w"))
+    open("artifacts/test.log", "w").write("COMMAND: pytest\nEXIT_CODE: 0\nDURATION_S: 1\n1 passed\n")
+    json.dump({"diffs": []}, open("artifacts/diff/manifest.json", "w"))
+    open("artifacts/review.md", "w").write("# review.md\n")
+    good_doc = f"# verification.md\n\n| {AC} | t | PASS |\n\n## Limitations\n\n- x\n"
+    _fake_bare_pxx(tmp_path, monkeypatch, "[COMPLETED]\n" + good_doc + OUTCOME_SESSION)
+    monkeypatch.setattr(verify, "assert_independence", lambda *a, **kw: None)
+    monkeypatch.setattr(verify, "check_access", lambda ep: None)
+    import pipeline.endpoints as endpoints
+    monkeypatch.setattr(endpoints, "resolve", lambda phase: EP)
+    sent = []
+    real_run = verify.subprocess.run
+    def capturing(argv, **kw):
+        sent.append(argv)
+        return real_run(argv, **kw)
+    monkeypatch.setattr(verify.subprocess, "run", capturing)
+    verify.run(worker="pxx")
+    prompt = next(a for argv in sent for i, a in enumerate(argv) if i and argv[i - 1] == "-m")
+    assert "MUST begin with `|` and end with `|`" in prompt
+    assert "exactly one pipe-delimited data row per acceptance criterion" in prompt
+    assert "whose first character is not `|` is invalid" in prompt
 
 EP = {"model": "qwen2.5:14b-instruct-q4_k_m", "endpoint": "http://10.0.1.115:11434",
       "provider": "ollama", "worker": "asrock-verifier"}
