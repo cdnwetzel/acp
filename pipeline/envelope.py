@@ -286,9 +286,14 @@ def reconcile(artifacts_dir="artifacts"):
                 f"planned {c['planned_capability']} but invoked "
                 f"{c['invoked_capability']}")
     # 3b. observed vs intended payload mode (pxx >= 2.6.2 bare-mode receipt):
-    #     'config said bare' is not evidence the request WAS bare. Records
-    #     lacking the fields (historical, or failure exits with no receipt)
-    #     are skipped, not failed.
+    #     'config said bare' is not evidence the request WAS bare. Historical
+    #     records (no payload_mode_expected at all) are skipped, not failed.
+    #     But a SUCCESSFUL invocation (exit_status == 0) that declared an
+    #     expected mode and has no observed receipt is an evidence hole —
+    #     fail it (Codex Phase-3 review P1): a clean exit must never
+    #     reconcile green without the receipt that proves the payload shape.
+    #     Failure exits already failed closed at runtime; they are skipped
+    #     here so reconcile does not double-punish an honest failure.
     for c in calls:
         expected, observed = c.get("payload_mode_expected"), c.get("payload_mode")
         if expected is not None and observed is not None and expected != observed:
@@ -296,6 +301,12 @@ def reconcile(artifacts_dir="artifacts"):
                 f"PAYLOAD_MODE_MISMATCH: {c['phase']} {c.get('task_id', '')}: "
                 f"intended payload_mode={expected} but the observed request was "
                 f"{observed} (session {c.get('pxx_session_id', '?')})")
+        elif (expected is not None and observed is None
+                and c.get("exit_status") == 0):
+            report["failures"].append(
+                f"PAYLOAD_RECEIPT_MISSING: {c['phase']} {c.get('task_id', '')}: "
+                f"successful invocation declared payload_mode={expected} but no "
+                f"observed receipt was recorded — the payload shape is unproven")
     # 3c. mock/real distinction: a gate pass for a phase declared REAL must be
     #     backed by at least one worker_call — a mock run can never launder
     #     real-phase evidence (ADV-012)

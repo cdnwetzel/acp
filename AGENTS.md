@@ -420,8 +420,19 @@ in-repo at `docs/evidence/review-20261004/`.
   fallback). Every successful ask-path run must evidence its payload shape:
   session id from the outcome line -> pxx audit `prompt_rendered` event;
   observed payload_mode != "bare" is an EVIDENCE failure (WorkerError), and
-  reconcile flags it as PAYLOAD_MODE_MISMATCH. CODE's agentic `pxx run` path
-  stays on the base ISOLATION_TOML — pxx refuses bare outside ask/plan.
+  reconcile flags it as PAYLOAD_MODE_MISMATCH, and a successful (exit 0)
+  invocation with NO observed receipt fails reconcile as
+  PAYLOAD_RECEIPT_MISSING (Codex Phase-3 review P1, fixed 2026-10-05).
+  CODE's agentic `pxx run` path stays on the base ISOLATION_TOML — pxx
+  refuses bare outside ask/plan.
+- **Bare-mode evidence-hardening follow-ups (Codex Phase-3 review,
+  2026-10-05 — carried, not closed)**: (P2) ACP reads pxx's audit event
+  without verifying pxx's audit hash chain + `.head` — receipts are
+  operational evidence, not yet production-grade; (P2) session extraction
+  scans all stdout instead of anchoring to the outcome line; (P2,
+  pre-existing) REVIEW/VERIFY lack an outer subprocess timeout. Required
+  follow-ups before payload receipts are treated as production-grade
+  evidence; none blocks the experimental Phase 4 measurement.
 - **Mechanical pre-write checks pattern**: phases validate machine
   contracts BEFORE writing artifacts; gates re-check after. Instances:
   PLAN 1:1 criteria check (ghost-task class), VERIFY verbatim

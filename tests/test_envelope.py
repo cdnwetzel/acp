@@ -170,6 +170,31 @@ def test_reconcile_payload_receipt_consistent_or_absent_passes(tmp_path, monkeyp
     assert rep["ok"], rep["failures"]
 
 
+def test_reconcile_payload_receipt_missing_on_success_fails(tmp_path, monkeypatch):
+    """Codex Phase-3 review P1: a SUCCESSFUL bare invocation (exit 0) whose
+    observed receipt is missing must NOT reconcile green — the payload shape
+    is unproven. (The runtime already raises an evidence-failure WorkerError
+    on this path; reconcile is the second layer for preserved bundles.)"""
+    monkeypatch.chdir(tmp_path)
+    _full_run(tmp_path)
+    envelope.emit_worker_call(**_call(pxx_session_id="26c341b826c6",
+                                      payload_mode_expected="bare"))
+    rep = envelope.reconcile()
+    assert not rep["ok"]
+    assert any("PAYLOAD_RECEIPT_MISSING" in f for f in rep["failures"])
+
+
+def test_reconcile_payload_receipt_missing_on_failure_exit_skipped(tmp_path, monkeypatch):
+    """A nonzero-exit record with an expected mode but no receipt already
+    failed closed at runtime — reconcile must not double-punish it."""
+    monkeypatch.chdir(tmp_path)
+    _full_run(tmp_path)
+    envelope.emit_worker_call(**_call(exit_status=1, payload_mode_expected="bare",
+                                      limitations=["nonzero exit rc=1 — classified, no retry"]))
+    rep = envelope.reconcile()
+    assert not any("PAYLOAD_RECEIPT_MISSING" in f for f in rep["failures"])
+
+
 def test_reconcile_gate_fail_with_later_gate_fails(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _full_run(tmp_path)
