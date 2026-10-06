@@ -31,7 +31,7 @@ No area below is closed until its required evidence exists.
 1. ~~C5 standby and recovery pass.~~ **PASS 2026-10-04** (ledger row 66) — awaiting no further evidence; closure recorded.
 2. ~~Eval corpus implemented; three baseline runs stable.~~ **PASS 2026-10-04** (ledger rows 67–68).
 3. ~~Holdout review completed.~~ **DONE 2026-10-04, scope-limited acceptance** (ledger row 69).
-4. Human VALIDATE runbook exercised — **BLOCKED**: runbook approved with corrections (ledger 71); first witnessed exercise authorized and attempted, aborted pre-gate on two PLAN worker contract failures (ledger 72); repair program followed (steps 1–7, ledger 77–85); requalification battery ran 5/6 green with the lifecycle item paused (ledger 87) pending the PLAN correction (below). Requalification restart, then one witnessed exercise against the runbook.
+4. Human VALIDATE runbook exercised — **BLOCKED**: runbook approved with corrections (ledger 71); first witnessed exercise authorized and attempted, aborted pre-gate on two PLAN worker contract failures (ledger 72); repair program followed (steps 1–7, ledger 77–85); requalification battery ran 5/6 green with the lifecycle item paused (ledger 87) pending the PLAN correction's regression evidence (below — correction implemented 2026-10-05, arms evidence pending). Requalification restart, then one witnessed exercise against the runbook.
 5. Envelope and ledger restoration verified — substantially evidenced (C5 kill −9, simulated loss, seal migration, reconcile hardening); re-confirm against the repaired code during requalification.
 6. Runtime and retrieval-security caveats recorded.
 7. Chris makes the final promotion decision.
@@ -42,11 +42,16 @@ No area below is closed until its required evidence exists.
   in four attempts. Diagnosis (`docs/plan-reliability-diagnosis-20261004.md`):
   pxx's injected coding-agent system prompt (+9 tool schemas) is the
   degradant — bare contract prompt 12/12 conformant vs 4/12 with the pxx
-  context; temperature, truncation, proxy, model, and ACP config ruled out.
-  Owner decision pending: pxx contract/bare mode (recommended) vs labrouter
-  route policy vs accept-the-rate. Requalification battery and the VALIDATE
-  exercise stay blocked until the correction lands with regression evidence
-  (isolation arms ~12/12, fresh lifecycle).
+  context; temperature, truncation, proxy, model, and ACP config ruled out
+  (full measurement detail, including the rescore, is in the diagnosis doc).
+  Owner decision MADE 2026-10-05: pxx bare mode. IMPLEMENTED — pxx 7360533
+  (v2.6.2, CI green, released to PyPI) + ACP a4716aa (ledger 90).
+  LIVE VERIFIED — smoke probes with audit payload receipts. PENDING —
+  Phase 4 regression evidence: isolation arms through pxx, 12 samples/arm,
+  expecting ~12/12 on the bare arm (abort condition: anything less stops
+  the program). Requalification battery and the VALIDATE exercise stay
+  blocked until that evidence lands; battery restart remains an owner
+  decision.
 
 ## Explicit deferrals (not silently forgotten)
 

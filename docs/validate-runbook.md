@@ -10,9 +10,13 @@ was authorized and attempted; it aborted pre-gate on two PLAN worker
 contract failures (ledger 72). The subsequent three-way review (orchestrator
 + baseline + adversarial + Codex repro package) found the substrate defects
 the step 1–6 amendments reflect. The requalification battery then ran 5/6
-green; its lifecycle item is paused pending the PLAN correction
-(`docs/plan-reliability-diagnosis-20261004.md`, ledger 87–88).
-Re-authorization of a fresh exercise awaits the completed battery.
+green; its lifecycle item is paused pending the PLAN correction's
+regression evidence (`docs/plan-reliability-diagnosis-20261004.md`,
+ledger 87–88). The correction itself LANDED 2026-10-05 (pxx bare mode,
+pxx 7360533 / v2.6.2; ACP a4716aa, ledger 90); Phase 4 isolation-arm
+evidence is still PENDING. Re-authorization of a fresh exercise awaits
+Phase 4 plus the completed battery and remains an owner decision — the
+exercise is NOT currently authorized.
 
 Scope: the VALIDATE phase of one ACP lifecycle run. VALIDATE is human-only by
 construction — the phase produces a sign-off *document*; the decision is a

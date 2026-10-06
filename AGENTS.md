@@ -96,11 +96,13 @@ python3 -m pipeline.approvals <gate> approve|deny "reason"
 # gates: intake | plan | validate
 ```
 
-**Current test status (2026-10-05): 251 passed, 0 failed**
+**Current test status (2026-10-05): 270 passed, 0 failed**
 (`python3 -m pytest tests/ -q`). C6 (2026-10-03) landed hash-chaining;
 the 2026-10-04 repair program added the legacy-prefix seal (row 78),
 lifecycle identity, hash-bound approvals, strict gate parsers, envelope
-chaining, and standby anti-rollback — each with regression tests.
+chaining, and standby anti-rollback — each with regression tests. The
+2026-10-05 pxx bare-mode adoption (ledger 90) added the TOML split, the
+pxx >= 2.6.2 version floor, and the observed-payload receipt.
 
 ## Code style and design rules
 
@@ -316,8 +318,13 @@ program; steps 1–6 landed:
    decision (ledger 87); diagnosis identified pxx's injected coding-agent
    system prompt (+9 tool schemas) as the PLAN degradant — bare prompt 12/12
    vs 4/12 with pxx context (`docs/plan-reliability-diagnosis-20261004.md`,
-   ledger 88). Correction choice is the open owner decision; VALIDATE stays
-   blocked until regression evidence + battery restart.
+   ledger 88). Correction LANDED 2026-10-05: pxx bare mode — IMPLEMENTED at
+   pxx 7360533 (v2.6.2, CI green, released to PyPI) and ACP a4716aa
+   (ledger 90); LIVE VERIFIED by smoke probes (bare vs default audit
+   receipts in pxx's hash-chained stream). PENDING: Phase 4 regression
+   evidence (isolation arms through pxx, 12 samples/arm) before any
+   battery restart. VALIDATE stays locked; battery restart is an owner
+   decision.
 
 Acceptance meter: the Codex repro package went from 5/24 to 24/24 passing
 against repaired HEAD, including its end-to-end gate_test injection.
