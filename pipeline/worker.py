@@ -4,7 +4,7 @@ Both CODE and REVIEW real paths consume these so the governed-endpoint
 discipline lives in exactly one place (step-2 conditions, fail-closed
 fallback, explicit scope, C7 PATH lesson).
 """
-import json, os, socket, subprocess
+import json, os, re, socket, subprocess
 
 ISOLATION_TOML = (
     "# ACP-managed run isolation. Empty fallback chain: a governed-phase failure\n"
@@ -20,6 +20,21 @@ ISOLATION_TOML = (
     "# transcript embeds this exact config as evidence. Disabling it here cannot\n"
     "# widen scope, permissions, budgets, routing, or any downstream ACP gate.\n"
     "clarity_gate = false\n"
+)
+
+# Ask/plan-only variant (pxx 7360533 / v2.6.2, owner-approved 2026-10-05).
+ISOLATION_TOML_BARE = ISOLATION_TOML + (
+    "# bare = true (pxx 7360533 / v2.6.2, owner-approved 2026-10-05): for\n"
+    "# `pxx ask`/`pxx plan` only, the chat-completions payload becomes a single\n"
+    "# user message — no system prompt, no tools key. Motivation: the PLAN\n"
+    "# reliability diagnosis of 2026-10-04 (docs/plan-reliability-diagnosis-\n"
+    "# 20261004.md) measured 12/12 contract-conformant bare vs 2/6 scaffolded\n"
+    "# at fixed model/task/temperature — pxx's injected coding-agent scaffolding\n"
+    "# was the degradant. Bare reduces ONLY the request payload: clarity gate,\n"
+    "# scope, hooks, budgets, permissions, and audit are unchanged. pxx refuses\n"
+    "# bare outside ask/plan (ConfigError), which is exactly why code.py's\n"
+    "# `pxx run` path stays on the base ISOLATION_TOML above.\n"
+    "bare = true\n"
 )
 
 class WorkerError(Exception):
@@ -38,17 +53,17 @@ def prompt_hash(prompt):
     import hashlib
     return hashlib.sha256(prompt.encode()).hexdigest()
 
-def write_transcript(path, argv, prompt, r):
+def write_transcript(path, argv, prompt, r, iso_config=ISOLATION_TOML):
     """Uniform worker transcript: the exact command, exit code, prompt hash,
     the exact isolation config in force, and COMPLETE stdout+stderr."""
     with open(path, "w") as f:
         f.write(f"$ {' '.join(argv)}\n[rc={r.returncode}]\n"
                 f"[prompt_sha256={prompt_hash(prompt)}]\n"
-                f"--- isolation config (pxx.toml as written) ---\n{ISOLATION_TOML}"
+                f"--- isolation config (pxx.toml as written) ---\n{iso_config}"
                 f"--- stdout ---\n{r.stdout}\n--- stderr ---\n{r.stderr}")
 
-def isolation_write(cwd):
-    """Write ISOLATION_TOML to <cwd>/pxx.toml, preserving any pre-existing
+def isolation_write(cwd, toml=ISOLATION_TOML):
+    """Write the isolation TOML to <cwd>/pxx.toml, preserving any pre-existing
     file byte-for-byte. Returns (path, restore): restore() rewrites the
     original bytes or removes the file only if WE created it (ADV-017: never
     delete configuration the target repo owned). pxx stashes (removes) the
@@ -58,7 +73,7 @@ def isolation_write(cwd):
     if os.path.exists(iso_path):
         original = open(iso_path, "rb").read()
     with open(iso_path, "w") as f:
-        f.write(ISOLATION_TOML)
+        f.write(toml)
     def restore():
         if original is not None:
             with open(iso_path, "wb") as f:
@@ -117,6 +132,115 @@ def pxx_bin():
         if cand and os.path.exists(cand):
             return cand
     raise WorkerError("pxx binary not found (checked PATH, ~/miniforge3/bin, ~/.local/bin)")
+
+BARE_MIN_VERSION = (2, 6, 2)  # pxx 7360533: Settings.bare + session= outcome line
+
+def require_bare_capable(binary):
+    """Fail-loud feature detection for bare mode: probe `<binary> --version`
+    and require pxx >= 2.6.2 (the version that adds Settings.bare, the
+    session= outcome field, and the payload-shape audit stamps). Unparsable
+    output, nonzero exit, timeout, spawn failure, or an older version all
+    raise WorkerError with the exact command output — there is NO fallback
+    to scaffolded mode."""
+    try:
+        r = subprocess.run([binary, "--version"], capture_output=True,
+                           text=True, timeout=10)
+    except subprocess.TimeoutExpired:
+        raise WorkerError(f"`{binary} --version` timed out after 10s — cannot "
+                          f"prove bare-mode capability (pxx >= 2.6.2); no fallback")
+    except OSError as e:
+        raise WorkerError(f"`{binary} --version` spawn failure: {e} — cannot "
+                          f"prove bare-mode capability (pxx >= 2.6.2); no fallback")
+    m = re.search(r"pxx (\d+)\.(\d+)\.(\d+)", r.stdout or "")
+    if r.returncode != 0 or not m:
+        raise WorkerError(
+            f"`{binary} --version` did not report a parseable pxx version "
+            f"(rc={r.returncode}) — cannot prove bare-mode capability; no "
+            f"fallback.\nstdout: {r.stdout!r}\nstderr: {r.stderr!r}")
+    found = tuple(int(g) for g in m.groups())
+    if found < BARE_MIN_VERSION:
+        raise WorkerError(
+            f"pxx {'.'.join(map(str, found))} < "
+            f"{'.'.join(map(str, BARE_MIN_VERSION))} — bare mode (pxx 7360533) "
+            f"requires >= 2.6.2; upgrade pxx, no fallback to scaffolded mode")
+
+def extract_pxx_session(stdout):
+    """The run's session id from pxx's CLI outcome line (`session=<hex>`,
+    pxx >= 2.6.2, e.g. `[COMPLETED] OK (rounds=1 tokens=85 diff_lines=0
+    session=26c341b826c6)`). None on old-format output."""
+    m = re.search(r"\bsession=([0-9a-f]+)\b", stdout or "")
+    return m.group(1) if m else None
+
+def _pxx_state_dir():
+    """pxx's state dir: $XDG_STATE_HOME/pxx, else ~/.local/state/pxx (matches
+    pxx config.py)."""
+    base = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
+    return os.path.join(base, "pxx")
+
+def payload_receipt(session_id, state_dir=None):
+    """Observed-payload receipt: the run's `prompt_rendered` audit event from
+    pxx's hash-chained audit stream (<state_dir>/audit/<local-date>.jsonl —
+    today first, yesterday only for the midnight edge). Returns
+    {payload_mode, system_message_present, tools_key_present, tool_count}.
+    Raises WorkerError if the session or event is absent — 'config said bare'
+    is not evidence the request WAS bare."""
+    import datetime
+    state_dir = state_dir or _pxx_state_dir()
+    today = datetime.date.today()
+    for day in (today, today - datetime.timedelta(days=1)):
+        path = os.path.join(state_dir, "audit", f"{day.isoformat()}.jsonl")
+        if not os.path.exists(path):
+            continue
+        for line in open(path):
+            if not line.strip():
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            ev = rec.get("event") or {}
+            if (ev.get("kind") == "prompt_rendered"
+                    and ev.get("session_id") == session_id):
+                data = ev.get("data") or {}
+                try:
+                    return {k: data[k] for k in ("payload_mode",
+                                                 "system_message_present",
+                                                 "tools_key_present", "tool_count")}
+                except KeyError as e:
+                    raise WorkerError(
+                        f"prompt_rendered event for pxx session {session_id} "
+                        f"lacks the {e} field — written by pxx < 2.6.2 or "
+                        f"schema drift; cannot evidence the payload shape") from e
+    raise WorkerError(
+        f"no prompt_rendered audit event for pxx session {session_id} under "
+        f"{state_dir}/audit (today/yesterday local dates) — cannot evidence "
+        f"the payload shape; the run is NOT bare-mode evidence")
+
+def bare_payload_evidence(stdout):
+    """Receipt bundle for a bare-mode ask/plan invocation. Returns
+    (fields, failure): fields for the envelope record (pxx_session_id,
+    payload_mode_expected='bare', and on success the four observed fields);
+    failure is an EVIDENCE-failure message or None. The model's output may be
+    fine — a missing session id, a missing audit event, or an observed
+    non-bare payload means the run is not bare-mode evidence."""
+    fields = {"payload_mode_expected": "bare"}
+    session_id = extract_pxx_session(stdout)
+    if session_id is None:
+        return fields, ("payload evidence failure: no session=<id> in the pxx "
+                        "outcome line — cannot evidence the payload shape "
+                        "(pxx >= 2.6.2 prints it); not a model failure")
+    fields["pxx_session_id"] = session_id
+    try:
+        fields.update(payload_receipt(session_id))
+    except WorkerError as e:
+        return fields, f"payload evidence failure: {e}"
+    if fields["payload_mode"] != "bare":
+        return fields, (f"PAYLOAD EVIDENCE FAILURE: intended bare mode but the "
+                        f"observed request had payload_mode="
+                        f"{fields['payload_mode']!r} (session {session_id}) — "
+                        f"config said bare, the audit stream says otherwise; "
+                        f"not a model failure")
+    return fields, None
 
 def pxx_env():
     """Subprocess environment with every PXX_* var stripped — endpoint and
@@ -242,8 +366,13 @@ def extract_one_json(stdout):
 
 def run_ask(ep, prompt, transcript_path, budget_rounds="4", budget_seconds="600",
             cwd=None, phase=None, task_id=None):
-    """One-shot governed `pxx ask` (no edit tools): isolation rewritten per
-    invocation, PXX_* stripped, transcript recorded, loud on nonzero exit.
+    """One-shot governed `pxx ask` (no edit tools) in BARE mode (pxx >= 2.6.2,
+    enforced by require_bare_capable — no scaffolded fallback): isolation
+    rewritten per invocation (ISOLATION_TOML_BARE), PXX_* stripped,
+    transcript recorded, loud on nonzero exit. After a successful run the
+    observed-payload receipt (session id -> pxx audit prompt_rendered event)
+    must confirm payload_mode == "bare"; a missing or contradicting receipt
+    is an EVIDENCE failure, not a model failure.
     No retries — a failure is evidence, not something to paper over.
     cwd: subprocess working directory (e.g. the target repo — pxx's clarity
     gate probes referenced files relative to it). The transcript path stays
@@ -259,7 +388,7 @@ def run_ask(ep, prompt, transcript_path, budget_rounds="4", budget_seconds="600"
     timeout = int(budget_seconds) + 60
     budgets = {"rounds": budget_rounds, "seconds": budget_seconds}
 
-    def _record(argv_text, rc, out, duration, failure_class):
+    def _record(argv_text, rc, out, duration, failure_class, payload=None):
         envelope.emit_worker_call(
             phase=phase or "code", task_id=task_id, planned="pxx:ask",
             invoked="pxx:ask", command=argv_text, exit_status=rc,
@@ -268,8 +397,9 @@ def run_ask(ep, prompt, transcript_path, budget_rounds="4", budget_seconds="600"
             endpoint=ep["endpoint"], prompt=prompt, output=out or None,
             artifacts=({transcript_path: transcript_path}
                        if transcript_path and os.path.exists(transcript_path) else {}),
-            runtime=envelope.pxx_version(), iso_config=ISOLATION_TOML,
-            limitations=[failure_class] if failure_class else [])
+            runtime=envelope.pxx_version(), iso_config=ISOLATION_TOML_BARE,
+            limitations=[failure_class] if failure_class else [],
+            **(payload or {}))
 
     t0 = time.monotonic()
     try:
@@ -278,13 +408,19 @@ def run_ask(ep, prompt, transcript_path, budget_rounds="4", budget_seconds="600"
         _record("pxx (binary unresolved)", -1, "", time.monotonic() - t0,
                 f"spawn failure: {e}")
         raise
+    try:
+        require_bare_capable(binary)  # bare mode needs pxx >= 2.6.2 — no fallback
+    except WorkerError as e:
+        _record(f"{binary} --version", -1, "", time.monotonic() - t0,
+                f"bare-mode capability check failed: {e}")
+        raise
     argv = [binary, "ask", "-m", prompt,
             "--model", ep["model"], "--base-url", ep["endpoint"],
             "--provider", ep.get("provider", "vllm"),
             "--budget-rounds", budget_rounds, "--budget-seconds", budget_seconds,
             "--no-memory", "--sandbox"]
     r, failure_class = None, None
-    iso_path, restore = isolation_write(cwd)  # preserve a pre-existing pxx.toml
+    iso_path, restore = isolation_write(cwd, ISOLATION_TOML_BARE)  # preserve a pre-existing pxx.toml
     try:
         try:
             r = subprocess.run(argv, capture_output=True, text=True,
@@ -303,7 +439,7 @@ def run_ask(ep, prompt, transcript_path, budget_rounds="4", budget_seconds="600"
     if r is None:  # spawn failure — no process existed, no transcript possible
         _record(" ".join(argv), -1, "", duration, failure_class)
         raise WorkerError(f"pxx {failure_class} — envelope record emitted")
-    write_transcript(transcript_path, argv, prompt, r)
+    write_transcript(transcript_path, argv, prompt, r, iso_config=ISOLATION_TOML_BARE)
     if r.returncode is None:  # timeout
         _record(" ".join(argv), -1, r.stdout, duration, failure_class)
         raise WorkerError(f"pxx {failure_class} — transcript {transcript_path}")
@@ -316,5 +452,8 @@ def run_ask(ep, prompt, transcript_path, budget_rounds="4", budget_seconds="600"
         _record(" ".join(argv), r.returncode, r.stdout, duration,
                 f"nonzero exit rc={r.returncode} — classified, no retry")
         raise classify_pxx_failure(prompt, r, transcript_path)
-    _record(" ".join(argv), 0, r.stdout, duration, None)
+    payload, evidence_failure = bare_payload_evidence(r.stdout)
+    _record(" ".join(argv), 0, r.stdout, duration, evidence_failure, payload)
+    if evidence_failure:
+        raise WorkerError(f"{evidence_failure} — transcript {transcript_path}")
     return r.stdout

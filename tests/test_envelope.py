@@ -140,6 +140,36 @@ def test_reconcile_capability_contradiction_fails(tmp_path, monkeypatch):
     assert any("CAPABILITY_CONTRADICTION" in f for f in rep["failures"])
 
 
+def test_reconcile_payload_mode_mismatch_fails(tmp_path, monkeypatch):
+    """Bare-mode receipt (pxx >= 2.6.2, 2026-10-05): 'config said bare' is not
+    evidence the request WAS bare — an observed payload_mode contradicting the
+    intended one is an evidence failure."""
+    monkeypatch.chdir(tmp_path)
+    _full_run(tmp_path)
+    envelope.emit_worker_call(**_call(pxx_session_id="26c341b826c6",
+                                      payload_mode_expected="bare",
+                                      payload_mode="default",
+                                      system_message_present=True,
+                                      tools_key_present=True, tool_count=9))
+    rep = envelope.reconcile()
+    assert not rep["ok"]
+    assert any("PAYLOAD_MODE_MISMATCH" in f for f in rep["failures"])
+
+
+def test_reconcile_payload_receipt_consistent_or_absent_passes(tmp_path, monkeypatch):
+    """Observed == intended passes; records lacking the payload fields
+    (historical, pre-2.6.2) are skipped, not failed."""
+    monkeypatch.chdir(tmp_path)
+    _full_run(tmp_path)  # historical shape: no payload fields at all
+    envelope.emit_worker_call(**_call(pxx_session_id="26c341b826c6",
+                                      payload_mode_expected="bare",
+                                      payload_mode="bare",
+                                      system_message_present=False,
+                                      tools_key_present=False, tool_count=0))
+    rep = envelope.reconcile()
+    assert rep["ok"], rep["failures"]
+
+
 def test_reconcile_gate_fail_with_later_gate_fails(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _full_run(tmp_path)

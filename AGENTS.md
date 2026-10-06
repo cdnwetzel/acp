@@ -402,6 +402,19 @@ in-repo at `docs/evidence/review-20261004/`.
   exact isolation config + prompt sha256 is embedded in every ACP worker
   transcript). pxx-side stops are classified ClarityGateStop (original rc,
   full stderr, prompt hash) — never a pass, never a silent retry.
+- **pxx bare mode (2026-10-05, pxx 7360533 / v2.6.2, owner-approved)**: all
+  ask-path phases (INTAKE/PLAN via run_ask, REVIEW, VERIFY) invoke pxx with
+  `bare = true` (ISOLATION_TOML_BARE) — the chat-completions payload is a
+  single user message, no system prompt, no tools key (12/12 contract-
+  conformant bare vs 2/6 scaffolded, plan-reliability diagnosis 2026-10-04).
+  Bare reduces ONLY the request payload; clarity/scope/hooks/budgets/
+  permissions/audit are unchanged. Hard floor: pxx >= 2.6.2 enforced by
+  `require_bare_capable` (`pxx --version` probe, fail-loud, no scaffolded
+  fallback). Every successful ask-path run must evidence its payload shape:
+  session id from the outcome line -> pxx audit `prompt_rendered` event;
+  observed payload_mode != "bare" is an EVIDENCE failure (WorkerError), and
+  reconcile flags it as PAYLOAD_MODE_MISMATCH. CODE's agentic `pxx run` path
+  stays on the base ISOLATION_TOML — pxx refuses bare outside ask/plan.
 - **Mechanical pre-write checks pattern**: phases validate machine
   contracts BEFORE writing artifacts; gates re-check after. Instances:
   PLAN 1:1 criteria check (ghost-task class), VERIFY verbatim

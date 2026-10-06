@@ -33,8 +33,11 @@ def test_signal_termination_is_not_spawn_failure(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     os.makedirs("artifacts")
     monkeypatch.setattr(w, "pxx_bin", lambda: "/fake/pxx")
-    monkeypatch.setattr(subprocess, "run",
-                        lambda *a, **kw: subprocess.CompletedProcess(a[0], -1, "partial", ""))
+    def fake_run(argv, **kw):
+        if "--version" in argv:  # bare-mode floor probe (pxx >= 2.6.2)
+            return subprocess.CompletedProcess(argv, 0, "pxx 2.6.2\n", "")
+        return subprocess.CompletedProcess(argv, -1, "partial", "")
+    monkeypatch.setattr(subprocess, "run", fake_run)
     with pytest.raises(w.WorkerError, match="signal 1"):
         w.run_ask(EP, "prompt", "artifacts/t.log", phase="code")
     recs = _envelope_records()
@@ -45,8 +48,10 @@ def test_timeout_is_its_own_class_with_partial_output(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     os.makedirs("artifacts")
     monkeypatch.setattr(w, "pxx_bin", lambda: "/fake/pxx")
-    def slow(*a, **kw):
-        raise subprocess.TimeoutExpired(a[0], kw.get("timeout"),
+    def slow(argv, **kw):
+        if "--version" in argv:  # bare-mode floor probe (pxx >= 2.6.2)
+            return subprocess.CompletedProcess(argv, 0, "pxx 2.6.2\n", "")
+        raise subprocess.TimeoutExpired(argv, kw.get("timeout"),
                                         output=b"partial stdout", stderr=b"partial stderr")
     monkeypatch.setattr(subprocess, "run", slow)
     with pytest.raises(w.WorkerError, match="timeout"):
@@ -67,14 +72,37 @@ def test_missing_binary_still_emits_record(tmp_path, monkeypatch):
     assert len(recs) == 1 and "spawn failure" in recs[0]["limitations"][0]
 
 def test_happy_path_single_record_no_limitations(tmp_path, monkeypatch):
+    # Bare-mode wiring (2026-10-05): a successful ask must now ALSO evidence
+    # its payload shape — version floor probe, session id in the outcome
+    # line, and a prompt_rendered audit event confirming payload_mode=bare.
+    import datetime
     monkeypatch.chdir(tmp_path)
     os.makedirs("artifacts")
     monkeypatch.setattr(w, "pxx_bin", lambda: "/fake/pxx")
-    monkeypatch.setattr(subprocess, "run",
-                        lambda *a, **kw: subprocess.CompletedProcess(a[0], 0, "answer", ""))
-    assert w.run_ask(EP, "prompt", "artifacts/t.log", phase="code") == "answer"
+    session = "26c341b826c6"
+    outcome = f"[COMPLETED] OK (rounds=1 tokens=3 diff_lines=0 session={session})\n"
+    def fake_run(argv, **kw):
+        if "--version" in argv:
+            return subprocess.CompletedProcess(argv, 0, "pxx 2.6.2\n", "")
+        return subprocess.CompletedProcess(argv, 0, "answer\n" + outcome, "")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    state_dir = tmp_path / "xstate"
+    audit = state_dir / "pxx" / "audit"
+    audit.mkdir(parents=True)
+    event = {"event": {"kind": "prompt_rendered",
+                       "data": {"payload_mode": "bare", "system_message_present": False,
+                                "tools_key_present": False, "tool_count": 0},
+                       "session_id": session, "seq": 1, "ts": "t"},
+             "hash": "0" * 64, "prev_hash": "0" * 64}
+    (audit / f"{datetime.date.today().isoformat()}.jsonl").write_text(
+        json.dumps(event) + "\n")
+    monkeypatch.setenv("XDG_STATE_HOME", str(state_dir))
+    assert w.run_ask(EP, "prompt", "artifacts/t.log", phase="code") == \
+        "answer\n" + outcome
     recs = _envelope_records()
     assert len(recs) == 1 and recs[0]["limitations"] == [] and recs[0]["exit_status"] == 0
+    assert recs[0]["pxx_session_id"] == session
+    assert recs[0]["payload_mode_expected"] == "bare"
 
 # ---------------------------------------------------------- runner ledgering
 

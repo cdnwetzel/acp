@@ -65,6 +65,31 @@ def test_untraced_criteria_genuinely_exact_passes():
     doc = f"# verification.md\n\n| {AC} | test.log | PASS |\n"
     assert verify._untraced_criteria(doc, [AC]) == []
 
+def _fake_bare_pxx(tmp_path, monkeypatch, ask_stdout):
+    """Hermetic pxx for the bare-mode wiring (2026-10-05): --version answers
+    2.6.2, the ask returns ask_stdout, and the audit stream evidences a bare
+    payload for the session id in the outcome line."""
+    import datetime, subprocess, types
+    monkeypatch.setattr(verify, "pxx_bin", lambda: "/fake/pxx")
+    def fake_run(argv, **kw):
+        if "--version" in argv:
+            return subprocess.CompletedProcess(argv, 0, "pxx 2.6.2\n", "")
+        return types.SimpleNamespace(returncode=0, stdout=ask_stdout, stderr="")
+    monkeypatch.setattr(verify.subprocess, "run", fake_run)
+    state_dir = tmp_path / "xstate"
+    audit = state_dir / "pxx" / "audit"
+    audit.mkdir(parents=True)
+    event = {"event": {"kind": "prompt_rendered",
+                       "data": {"payload_mode": "bare", "system_message_present": False,
+                                "tools_key_present": False, "tool_count": 0},
+                       "session_id": "26c341b826c6", "seq": 1, "ts": "t"},
+             "hash": "0" * 64, "prev_hash": "0" * 64}
+    (audit / f"{datetime.date.today().isoformat()}.jsonl").write_text(
+        json.dumps(event) + "\n")
+    monkeypatch.setenv("XDG_STATE_HOME", str(state_dir))
+
+OUTCOME_SESSION = " (rounds=1 tokens=3 diff_lines=0 session=26c341b826c6)\n"
+
 def test_run_pxx_refuses_to_write_non_traced_document(tmp_path, monkeypatch):
     """Phase-level: a corrupt-quoted document is refused BEFORE write — the
     artifact never lands, the error names the class."""
@@ -75,9 +100,7 @@ def test_run_pxx_refuses_to_write_non_traced_document(tmp_path, monkeypatch):
     json.dump({"diffs": []}, open("artifacts/diff/manifest.json", "w"))
     open("artifacts/review.md", "w").write("# review.md\n")
     bad_doc = "# verification.md\n\n| " + AC.replace("—", "\\u2014") + " | t | PASS |\n\n## Limitations\n\n- x\n"
-    import types
-    fake = types.SimpleNamespace(returncode=0, stdout="[COMPLETED]\n" + bad_doc, stderr="")
-    monkeypatch.setattr(verify.subprocess, "run", lambda *a, **kw: fake)
+    _fake_bare_pxx(tmp_path, monkeypatch, "[COMPLETED]\n" + bad_doc + OUTCOME_SESSION)
     monkeypatch.setattr(verify, "assert_independence", lambda *a, **kw: None)
     monkeypatch.setattr(verify, "check_access", lambda ep: None)
     import pipeline.endpoints as endpoints
@@ -97,9 +120,7 @@ def test_run_pxx_refuses_decorated_criterion_before_write(tmp_path, monkeypatch)
     open("artifacts/review.md", "w").write("# review.md\n")
     bad_doc = ("# verification.md\n\n| **" + AC + "** | t | PASS |\n\n"
                "## Limitations\n\n- x\n")
-    import types
-    fake = types.SimpleNamespace(returncode=0, stdout="[COMPLETED]\n" + bad_doc, stderr="")
-    monkeypatch.setattr(verify.subprocess, "run", lambda *a, **kw: fake)
+    _fake_bare_pxx(tmp_path, monkeypatch, "[COMPLETED]\n" + bad_doc + OUTCOME_SESSION)
     monkeypatch.setattr(verify, "assert_independence", lambda *a, **kw: None)
     monkeypatch.setattr(verify, "check_access", lambda ep: None)
     import pipeline.endpoints as endpoints

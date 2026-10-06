@@ -120,11 +120,16 @@ def emit_worker_call(*, phase, planned, invoked, command, exit_status,
                      duration_s, budgets=None, task_id=None, model=None,
                      provider=None, endpoint=None, prompt=None, inputs=None,
                      output=None, artifacts=None, limitations=None,
-                     runtime=None, iso_config=None):
+                     runtime=None, iso_config=None, pxx_session_id=None,
+                     payload_mode_expected=None, payload_mode=None,
+                     system_message_present=None, tools_key_present=None,
+                     tool_count=None):
     """One record per real worker invocation. prompt/inputs/output are raw
     strings hashed HERE — the envelope never sees bodies. artifacts maps
     display name -> file path; file CONTENTS are hashed (integrity anchor
-    for reconciliation). Emits on failure exits too (rc != 0 is evidence)."""
+    for reconciliation). Emits on failure exits too (rc != 0 is evidence).
+    The payload_* fields are the observed-payload receipt (pxx >= 2.6.2 bare
+    mode): what the config INTENDED vs what the audit stream OBSERVED."""
     artifact_hashes = {}
     for name, path in (artifacts or {}).items():
         if os.path.exists(path):
@@ -163,6 +168,18 @@ def emit_worker_call(*, phase, planned, invoked, command, exit_status,
         rec["runtime"] = runtime
     if iso_config is not None:
         rec["iso_config_sha256"] = _sha(iso_config)
+    if pxx_session_id is not None:
+        rec["pxx_session_id"] = pxx_session_id
+    if payload_mode_expected is not None:
+        rec["payload_mode_expected"] = payload_mode_expected
+    if payload_mode is not None:
+        rec["payload_mode"] = payload_mode
+    if system_message_present is not None:
+        rec["system_message_present"] = system_message_present
+    if tools_key_present is not None:
+        rec["tools_key_present"] = tools_key_present
+    if tool_count is not None:
+        rec["tool_count"] = tool_count
     _append(rec)
 
 def reconcile(artifacts_dir="artifacts"):
@@ -268,7 +285,18 @@ def reconcile(artifacts_dir="artifacts"):
                 f"CAPABILITY_CONTRADICTION: {c['phase']} {c.get('task_id', '')}: "
                 f"planned {c['planned_capability']} but invoked "
                 f"{c['invoked_capability']}")
-    # 3b. mock/real distinction: a gate pass for a phase declared REAL must be
+    # 3b. observed vs intended payload mode (pxx >= 2.6.2 bare-mode receipt):
+    #     'config said bare' is not evidence the request WAS bare. Records
+    #     lacking the fields (historical, or failure exits with no receipt)
+    #     are skipped, not failed.
+    for c in calls:
+        expected, observed = c.get("payload_mode_expected"), c.get("payload_mode")
+        if expected is not None and observed is not None and expected != observed:
+            report["failures"].append(
+                f"PAYLOAD_MODE_MISMATCH: {c['phase']} {c.get('task_id', '')}: "
+                f"intended payload_mode={expected} but the observed request was "
+                f"{observed} (session {c.get('pxx_session_id', '?')})")
+    # 3c. mock/real distinction: a gate pass for a phase declared REAL must be
     #     backed by at least one worker_call — a mock run can never launder
     #     real-phase evidence (ADV-012)
     for g in gates:

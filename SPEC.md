@@ -38,6 +38,15 @@ contradictory record is an evidence failure, never "not applicable" — plus
 sidecar chain integrity, manifest divergence, gate-without-evidence,
 retry-aware sequencing, ledger_head membership, and human-gate bypass
 checks (repair step 6, 2026-10-04).
+
+Bare mode (2026-10-05): ask-path pxx invocations (INTAKE/PLAN/REVIEW/VERIFY)
+require pxx >= 2.6.2 and run with `bare = true` (single-user-message payload,
+no system prompt/tools key; `pxx run` stays scaffolded — pxx refuses bare
+there). `worker_call` records carry the observed-payload receipt:
+`pxx_session_id`, `payload_mode_expected`, and the observed `payload_mode`,
+`system_message_present`, `tools_key_present`, `tool_count` from pxx's audit
+stream; reconcile flags an intended-vs-observed contradiction as
+`PAYLOAD_MODE_MISMATCH`.
 Operationally separate from the ledger and artifact contracts; preserved
 into the drill evidence bundle with the other artifacts. Deferred (b):
 promoting selected envelope fields into per-phase gate artifacts, only if

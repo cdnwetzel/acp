@@ -8,9 +8,11 @@ Output contract is gate-enforced: one ## TASK-n section per diff, every
 issue RESOLVED or WAIVED-with-reason.
 """
 import json, os, re, subprocess, time
-from pipeline.worker import (ISOLATION_TOML, WorkerError, assert_independence,
-                             assert_read_only, check_access, classify_pxx_failure,
-                             git_boundary_snapshot, pxx_bin, pxx_env,
+from pipeline.worker import (ISOLATION_TOML_BARE, WorkerError,
+                             assert_independence, assert_read_only,
+                             bare_payload_evidence, check_access,
+                             classify_pxx_failure, git_boundary_snapshot,
+                             pxx_bin, pxx_env, require_bare_capable,
                              scope_offenders, write_transcript)
 
 PHASE = "review"
@@ -85,6 +87,8 @@ def _run_pxx(target_repo, reviewer=None):
         ep.setdefault("provider", "vllm")
     _assert_independence(ep, reviewer or "phases.review (governed default)")
     check_access(ep)
+    binary = pxx_bin()
+    require_bare_capable(binary)  # bare mode needs pxx >= 2.6.2 — no fallback
     manifest = json.load(open("artifacts/diff/manifest.json"))
     plan = json.load(open("artifacts/plan.json"))
     acs = json.load(open("artifacts/intake.json"))["acceptance_criteria"]
@@ -100,7 +104,7 @@ def _run_pxx(target_repo, reviewer=None):
         for d in manifest["diffs"]:
             if iso_path:  # pxx stashes repo-local config per invocation (+stash):
                 with open(iso_path, "w") as f:  # rewrite before EVERY ask
-                    f.write(ISOLATION_TOML)
+                    f.write(ISOLATION_TOML_BARE)
             patch_abs = os.path.abspath(d["path"])
             patch = open(patch_abs).read()
             context = _build_review_context(d, plan, manifest)
@@ -125,7 +129,7 @@ def _run_pxx(target_repo, reviewer=None):
                 "- issue: none — RESOLVED (diff satisfies the criterion)\n"
                 "--- BEGIN DIFF ---\n" + patch + "\n--- END DIFF ---\n"
                 + context)
-            argv = [pxx_bin(), "ask", "-m", prompt,
+            argv = [binary, "ask", "-m", prompt,
                     "--model", ep["model"], "--base-url", ep["endpoint"],
                     "--provider", ep.get("provider", "vllm"),
                     "--budget-rounds", "6", "--budget-seconds", "600",
@@ -135,7 +139,9 @@ def _run_pxx(target_repo, reviewer=None):
                                cwd=cwd, env=pxx_env())
             duration = time.monotonic() - t0
             tpath = f"artifacts/diff/{d['task']}.review.transcript.log"
-            write_transcript(tpath, argv, prompt, r)
+            write_transcript(tpath, argv, prompt, r, iso_config=ISOLATION_TOML_BARE)
+            payload, evidence_failure = (bare_payload_evidence(r.stdout)
+                                         if r.returncode == 0 else ({}, None))
             from pipeline import envelope
             envelope.emit_worker_call(
                 phase="review", task_id=d["task"], planned="pxx:ask",
@@ -145,11 +151,16 @@ def _run_pxx(target_repo, reviewer=None):
                 model=ep["model"], provider=ep.get("provider", "vllm"),
                 endpoint=ep["endpoint"], prompt=prompt, output=r.stdout,
                 artifacts={tpath: tpath, d["path"]: d["path"]},
-                runtime=envelope.pxx_version(), iso_config=ISOLATION_TOML,
-                limitations=[] if r.returncode == 0 else
-                            [f"nonzero exit rc={r.returncode} — classified, no retry"])
+                runtime=envelope.pxx_version(), iso_config=ISOLATION_TOML_BARE,
+                limitations=[f"nonzero exit rc={r.returncode} — classified, no retry"]
+                            if r.returncode != 0 else
+                            [evidence_failure] if evidence_failure else [],
+                **payload)
             if r.returncode != 0:
                 raise classify_pxx_failure(prompt, r, tpath)
+            if evidence_failure:  # observed payload was NOT bare — evidence failure
+                raise WorkerError(f"{d['task']}: {evidence_failure} — "
+                                  f"transcript {tpath}")
             findings = []
             for line in r.stdout.splitlines():
                 s = line.strip()

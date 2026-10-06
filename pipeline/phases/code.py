@@ -156,6 +156,9 @@ def _run_pxx(target_repo):
                 prompt=prompt, output=r.stdout,
                 artifacts={tpath: tpath},
                 runtime=envelope.pxx_version(), iso_config=ISOLATION_TOML,
+                # agentic `pxx run` path — pxx refuses bare outside ask/plan,
+                # so this stays on the base TOML; no payload receipt read.
+                payload_mode_expected="default",
                 limitations=[] if r.returncode == 0 else
                             [f"nonzero exit rc={r.returncode} — classified, no retry"])
             if r.returncode != 0:

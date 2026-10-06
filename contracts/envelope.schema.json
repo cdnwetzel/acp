@@ -26,6 +26,12 @@
     "limitations": { "type": "array" },
     "runtime": { "type": "string" },
     "iso_config_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "pxx_session_id": { "type": "string", "minLength": 1 },
+    "payload_mode_expected": { "type": "string", "pattern": "^(bare|default)$" },
+    "payload_mode": { "type": "string", "minLength": 1 },
+    "system_message_present": { "type": "boolean" },
+    "tools_key_present": { "type": "boolean" },
+    "tool_count": { "type": "integer" },
     "declared_workers": { "type": "object" },
     "detail": { "type": "string" }
   }

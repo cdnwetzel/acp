@@ -9,9 +9,11 @@ acceptance criterion traced to a PASS verdict, no FAIL rows, and a
 non-empty ## Limitations section (evidence must state its own limits).
 """
 import json, os, re, subprocess, time
-from pipeline.worker import (ISOLATION_TOML, WorkerError, assert_independence,
-                             assert_read_only, check_access, classify_pxx_failure,
-                             git_boundary_snapshot, pxx_bin, pxx_env,
+from pipeline.worker import (ISOLATION_TOML_BARE, WorkerError,
+                             assert_independence, assert_read_only,
+                             bare_payload_evidence, check_access,
+                             classify_pxx_failure, git_boundary_snapshot,
+                             pxx_bin, pxx_env, require_bare_capable,
                              write_transcript)
 
 PHASE = "verify"
@@ -49,6 +51,8 @@ def _run_pxx(target_repo):
     ep = endpoints.resolve(PHASE)
     assert_independence(ep, f"verifier '{ep.get('worker', PHASE)}'")
     check_access(ep)
+    binary = pxx_bin()
+    require_bare_capable(binary)  # bare mode needs pxx >= 2.6.2 — no fallback
     intake = json.load(open("artifacts/intake.json"))
     acs = intake["acceptance_criteria"]
     evidence_parts = [
@@ -93,7 +97,7 @@ def _run_pxx(target_repo):
         "(non-empty, specific — never perfunctory).\n"
         "--- ACCEPTANCE CRITERIA ---\n" + "\n".join(f"- {a}" for a in acs) +
         "\n--- EVIDENCE ---\n" + evidence + "\n--- END EVIDENCE ---")
-    argv = [pxx_bin(), "ask", "-m", prompt,
+    argv = [binary, "ask", "-m", prompt,
             "--model", ep["model"], "--base-url", ep["endpoint"],
             "--provider", ep.get("provider", "ollama"),
             "--budget-rounds", "4", "--budget-seconds", "600",
@@ -101,7 +105,7 @@ def _run_pxx(target_repo):
     try:
         if iso_path:  # pxx stashes repo-local config per invocation (+stash):
             with open(iso_path, "w") as f:
-                f.write(ISOLATION_TOML)
+                f.write(ISOLATION_TOML_BARE)
         t0 = time.monotonic()
         r = subprocess.run(argv, capture_output=True, text=True,
                            cwd=cwd, env=pxx_env())
@@ -112,7 +116,10 @@ def _run_pxx(target_repo):
         elif iso_path and os.path.exists(iso_path):
             os.remove(iso_path)
     duration = time.monotonic() - t0
-    write_transcript("artifacts/verify.transcript.log", argv, prompt, r)
+    write_transcript("artifacts/verify.transcript.log", argv, prompt, r,
+                     iso_config=ISOLATION_TOML_BARE)
+    payload, evidence_failure = (bare_payload_evidence(r.stdout)
+                                 if r.returncode == 0 else ({}, None))
     from pipeline import envelope
     envelope.emit_worker_call(
         phase="verify", planned="pxx:ask", invoked="pxx:ask",
@@ -122,11 +129,16 @@ def _run_pxx(target_repo):
         endpoint=ep["endpoint"], prompt=prompt, inputs=evidence,
         output=r.stdout,
         artifacts={"artifacts/verify.transcript.log": "artifacts/verify.transcript.log"},
-        runtime=envelope.pxx_version(), iso_config=ISOLATION_TOML,
-        limitations=[] if r.returncode == 0 else
-                    [f"nonzero exit rc={r.returncode} — classified, no retry"])
+        runtime=envelope.pxx_version(), iso_config=ISOLATION_TOML_BARE,
+        limitations=[f"nonzero exit rc={r.returncode} — classified, no retry"]
+                    if r.returncode != 0 else
+                    [evidence_failure] if evidence_failure else [],
+        **payload)
     if r.returncode != 0:
         raise classify_pxx_failure(prompt, r, "artifacts/verify.transcript.log")
+    if evidence_failure:  # observed payload was NOT bare — evidence failure
+        raise WorkerError(f"{evidence_failure} — transcript "
+                          f"artifacts/verify.transcript.log")
     doc = _extract_document(r.stdout)
     if doc is None:
         raise WorkerError(
