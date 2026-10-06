@@ -62,7 +62,12 @@ _CONVENTION = (
     "e.g. 'divide owned by ops.py' — never a bare name), EVIDENCE SOURCE "
     "(where proof must appear — the recorded test.log, never ad-hoc checks), "
     "and SCOPE (which files the criterion constrains — one task owns each "
-    "file). Invariants: tests must exercise the OWNED implementation, never "
+    "file). The recorded test.log is pytest -v output: one "
+    "'<test-file>::<test-id> PASSED|FAILED|SKIPPED' line per test plus "
+    "pytest's own summary line — so a criterion may demand exactly that "
+    "evidence (named test IDs with their outcomes) and NOTHING the log does "
+    "not show; a criterion demanding evidence the recorded test.log cannot "
+    "contain is a FAILED criterion. Invariants: tests must exercise the OWNED implementation, never "
     "a local copy, shadow, or redefinition of the subject; a criterion that "
     "can be satisfied letter-correct but behaviorally fake is a FAILED "
     "criterion.")

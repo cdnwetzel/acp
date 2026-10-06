@@ -126,6 +126,35 @@ def test_missing_intake_fails_test_gate(tmp_path, monkeypatch):
     with pytest.raises(gates.GateError, match="missing required input"):
         gates.gate_test()
 
+def test_verbose_log_shape_passes(tmp_path, monkeypatch):
+    """2026-10-06 evidentiary-gap fix: pytest -v names test IDs in the body;
+    the gate grammar is unchanged — header + pytest's own summary line."""
+    _setup(tmp_path, monkeypatch)
+    body = ("tests/test_calc.py::test_add PASSED                    [ 33%]\n"
+            "tests/test_calc.py::test_add_negative PASSED           [ 66%]\n"
+            "tests/test_calc.py::test_divide_by_zero PASSED         [100%]\n"
+            "3 passed in 0.1s")
+    assert _test(_log(body=body))
+
+def test_verbose_log_with_failure_summary_fails(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch)
+    body = ("tests/test_calc.py::test_add PASSED                    [ 50%]\n"
+            "tests/test_calc.py::test_divide_by_zero FAILED         [100%]\n"
+            "1 failed, 1 passed in 0.1s")
+    with pytest.raises(gates.GateError, match="failures"):
+        _test(_log(body=body))
+
+def test_verbose_skips_still_need_header_declarations(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch)
+    body = ("tests/test_calc.py::test_add PASSED                    [ 33%]\n"
+            "tests/test_calc.py::test_slow SKIPPED                  [ 66%]\n"
+            "tests/test_calc.py::test_div PASSED                    [100%]\n"
+            "2 passed, 1 skipped in 0.1s")
+    with pytest.raises(gates.GateError, match="lack a pipeline-owned header"):
+        _test(_log(body=body))
+    header = "SKIPS: 1\nSKIP: test_calc.py::test_slow — no GPU on this host\n"
+    assert _test(_log(header_extra=header, body=body))
+
 # --------------------------------------------------------------- verify ---
 
 def _verify(ac, row_tail):

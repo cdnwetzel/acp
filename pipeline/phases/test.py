@@ -7,6 +7,13 @@ proxy. Both write the same test.log contract: pipeline-owned header
 (COMMAND, EXIT_CODE, DURATION_S, SKIPS/SKIP declarations), then full
 stdout/stderr as worker-controlled text. Phases produce; the GATE decides.
 
+pytest runs verbose (-v), never quiet: the log body carries one
+'<test-file>::<test-id> PASSED|FAILED|SKIPPED' line per test plus pytest's
+own summary, so acceptance criteria can demand named test IDs as evidence
+(owner ruling 2026-10-06 — the 2x2 experiment showed a dots-only log makes
+such criteria honestly unsatisfiable; the gate grammar is unchanged and
+still trusts only the header plus pytest's summary line).
+
 Execution boundary (ADV-021 decision, owner scope 2026-10-04): in drill scope
 pytest runs worker-authored code with the orchestrator's uid and environment
 on the same host as the ledger — a standing capability under ADR-001's shared
@@ -51,7 +58,7 @@ def run(mock=False, worker=None, target_repo=None):
         return _run_target(target_repo)
     if not mock:
         raise NotImplementedError("worker not wired for phase " + PHASE)
-    cmd = [sys.executable, "-m", "pytest", "tests/test_state.py", "-q", "-rs"]
+    cmd = [sys.executable, "-m", "pytest", "tests/test_state.py", "-v", "-rs"]
     t0 = time.monotonic()
     r = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO_ROOT)
     return _write_log(" ".join(cmd) + f" (cwd={REPO_ROOT})",
@@ -60,7 +67,7 @@ def run(mock=False, worker=None, target_repo=None):
 def _run_target(target_repo):
     if not target_repo or not os.path.isdir(target_repo):
         raise ValueError(f"TEST real worker needs a valid target_repo, got: {target_repo!r}")
-    cmd = [sys.executable, "-m", "pytest", ".", "-q", "-rs"]
+    cmd = [sys.executable, "-m", "pytest", ".", "-v", "-rs"]
     t0 = time.monotonic()
     r = subprocess.run(cmd, capture_output=True, text=True, cwd=target_repo)
     duration = time.monotonic() - t0
