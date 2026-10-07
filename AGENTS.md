@@ -96,7 +96,7 @@ python3 -m pipeline.approvals <gate> approve|deny "reason"
 # gates: intake | plan | validate
 ```
 
-**Current test status (2026-10-06): 285 passed, 0 failed**
+**Current test status (2026-10-06): 293 passed, 0 failed**
 (`python3 -m pytest tests/ -q`). C6 (2026-10-03) landed hash-chaining;
 the 2026-10-04 repair program added the legacy-prefix seal (row 78),
 lifecycle identity, hash-bound approvals, strict gate parsers, envelope
@@ -356,6 +356,20 @@ program; steps 1–6 landed:
    determinism probe 3/3 conformant → stochastic (row 109); ONE bounded
    resume-retry → VERIFY green, lifecycle PARKED at `gate_open:validate`
    (row 110, bundle `/tmp/acp-preserved/validate-exercise-parked-20261006-171753`).
+   VALIDATE preflight on that run found envelope reconcile RED (row 111
+   session park; findings classified): sidecar-chain summary unreachable,
+   retry-unaware hash re-verification, and CODE-path payload receipts never
+   captured. Owner approved repair-then-fresh-run: all three repaired
+   (b5ce7f5, row 112; suite 293/293); the chaos matrix then proved the RED
+   paths at lifecycle level — 6/6 designed faults caught at the exact
+   expected layer (row 113; preserved
+   `/tmp/acp-preserved/chaos-matrix-20261006-204704`); a fresh green run
+   went first-attempt clean intake→verify and PARKED at
+   `gate_open:validate` with the FIRST fully-clean reconcile (zero
+   failures, sidecar "verified", receipts on all 10 worker calls incl.
+   code-path DEFAULT payloads; row 114; bundle
+   `/tmp/acp-preserved/lifecycle-fresh-validate-exercise-parked-20261006-205223`).
+   The seq-110 run is SUPERSEDED as the VALIDATE candidate.
    NEXT: witnessed human VALIDATE per `docs/validate-runbook.md` —
    owner-only, NOT yet re-authorized. Config-attribution caveat: the arms
    measured the 27B; the lifecycle VERIFY worker is the Asrock 14B — arms
