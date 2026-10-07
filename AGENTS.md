@@ -96,13 +96,24 @@ python3 -m pipeline.approvals <gate> approve|deny "reason"
 # gates: intake | plan | validate
 ```
 
-**Current test status (2026-10-06): 293 passed, 0 failed**
+**Current test status (2026-10-07): 293 passed, 0 failed**
 (`python3 -m pytest tests/ -q`). C6 (2026-10-03) landed hash-chaining;
 the 2026-10-04 repair program added the legacy-prefix seal (row 78),
 lifecycle identity, hash-bound approvals, strict gate parsers, envelope
 chaining, and standby anti-rollback — each with regression tests. The
 2026-10-05 pxx bare-mode adoption (ledger 90) added the TOML split, the
-pxx >= 2.6.2 version floor, and the observed-payload receipt.
+pxx >= 2.6.2 version floor, and the observed-payload receipt. 2026-10-06
+locked the requalification config (hardened VERIFY prompt + temp 0,
+ledger 106), proved the chaos matrix 6/6 (ledger 113), and parked the
+first fully-clean-reconcile green lifecycle at `gate_open:validate`
+(ledger 114). 2026-10-07: reviewer evidence completed — gpt-oss:20b
+24/32 seeded-defect detection over two days (ledger 122/123),
+Nemotron-nothink 0/16 and disqualified as reviewer (ledger 124; pxx
+2.6.5 `chat_template_kwargs` shipped for that probe); the witnessed
+human VALIDATE was APPROVED by the owner, scope-limited to the drill
+lifecycle's procedure (repo ledger 125, sandbox seq 19). Reviewer
+adoption (REVIEW -> gpt-oss:20b, endpoints.json) is the pending owner
+decision; VERIFY/Nemotron stays parked behind the C3 tunnel retarget.
 
 ## Code style and design rules
 
