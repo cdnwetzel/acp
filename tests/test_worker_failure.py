@@ -159,6 +159,13 @@ def test_code_resume_is_idempotent_per_task(tmp_path, monkeypatch):
         open("artifacts/plan.json", "w"))
     monkeypatch.setattr(code, "check_access", lambda ep: None)
     monkeypatch.setattr(code, "pxx_bin", lambda: "/fake/pxx")
+    # Receipt capture is exercised end-to-end in
+    # test_code_run_captures_default_payload_receipt below; this test's
+    # subject is resume idempotency, so stub the receipt read.
+    monkeypatch.setattr(code, "default_payload_evidence",
+                        lambda stdout: ({"payload_mode_expected": "default",
+                                         "payload_mode": "default",
+                                         "pxx_session_id": "stub"}, None))
     calls = []
     real_run = subprocess.run
     def fake_run(argv, **kw):
@@ -195,6 +202,89 @@ def test_code_resume_is_idempotent_per_task(tmp_path, monkeypatch):
     assert log.count("TASK-1: ACP CODE worker") == 1  # no double commit
     manifest = json.load(open("artifacts/diff/manifest.json"))
     assert [d["task"] for d in manifest["diffs"]] == ["TASK-1", "TASK-2"]
+
+def test_code_run_captures_default_payload_receipt(tmp_path, monkeypatch):
+    """Owner find 2026-10-06: a successful `pxx run` task records the observed
+    DEFAULT payload (session id + receipt fields) in the envelope — 'config
+    said default' is not evidence the request WAS default."""
+    import datetime
+    pipe, repo = tmp_path / "pipe", tmp_path / "repo"
+    pipe.mkdir()
+    _make_repo(repo)
+    monkeypatch.chdir(pipe)
+    os.makedirs("artifacts")
+    json.dump({"tasks": [{"id": "TASK-1", "criterion": "AC-1: fix add",
+                          "deps": [], "scope": ["calc.py"]}],
+               "required_imports": []}, open("artifacts/plan.json", "w"))
+    monkeypatch.setattr(code, "check_access", lambda ep: None)
+    monkeypatch.setattr(code, "pxx_bin", lambda: "/fake/pxx")
+    session = "deafbeef00112233"
+    outcome = f"[COMPLETED] OK (rounds=2 tokens=9 diff_lines=3 session={session})\n"
+    real_run = subprocess.run
+    def fake_run(argv, **kw):
+        if argv and argv[0] == "/fake/pxx":
+            iso = os.path.join(kw["cwd"], "pxx.toml")
+            if os.path.exists(iso):
+                os.remove(iso)
+            with open(os.path.join(kw["cwd"], "calc.py"), "a") as f:
+                f.write("\n# change\n")
+            return subprocess.CompletedProcess(argv, 0, "done\n" + outcome, "")
+        return real_run(argv, **kw)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    state_dir = tmp_path / "xstate"
+    audit = state_dir / "pxx" / "audit"
+    audit.mkdir(parents=True)
+    event = {"event": {"kind": "prompt_rendered",
+                       "data": {"payload_mode": "default",
+                                "system_message_present": True,
+                                "tools_key_present": True, "tool_count": 9},
+                       "session_id": session, "seq": 1, "ts": "t"},
+             "hash": "0" * 64, "prev_hash": "0" * 64}
+    (audit / f"{datetime.date.today().isoformat()}.jsonl").write_text(
+        json.dumps(event) + "\n")
+    monkeypatch.setenv("XDG_STATE_HOME", str(state_dir))
+    assert code.run(worker="pxx", target_repo=str(repo)) == \
+        "artifacts/diff/manifest.json"
+    recs = [r for r in (json.loads(l) for l in open("artifacts/envelope.jsonl"))
+            if r.get("record_type") == "worker_call"]
+    assert len(recs) == 1
+    assert recs[0]["payload_mode_expected"] == "default"
+    assert recs[0]["payload_mode"] == "default"
+    assert recs[0]["pxx_session_id"] == session
+
+def test_code_run_missing_receipt_is_an_evidence_failure(tmp_path, monkeypatch):
+    """A clean exit whose receipt cannot be evidenced (no session id in the
+    outcome line) fails loudly AFTER the envelope record is emitted — never
+    reconciles green, never a model failure."""
+    pipe, repo = tmp_path / "pipe", tmp_path / "repo"
+    pipe.mkdir()
+    _make_repo(repo)
+    monkeypatch.chdir(pipe)
+    os.makedirs("artifacts")
+    json.dump({"tasks": [{"id": "TASK-1", "criterion": "AC-1: fix add",
+                          "deps": [], "scope": ["calc.py"]}],
+               "required_imports": []}, open("artifacts/plan.json", "w"))
+    monkeypatch.setattr(code, "check_access", lambda ep: None)
+    monkeypatch.setattr(code, "pxx_bin", lambda: "/fake/pxx")
+    real_run = subprocess.run
+    def fake_run(argv, **kw):
+        if argv and argv[0] == "/fake/pxx":
+            iso = os.path.join(kw["cwd"], "pxx.toml")
+            if os.path.exists(iso):
+                os.remove(iso)
+            with open(os.path.join(kw["cwd"], "calc.py"), "a") as f:
+                f.write("\n# change\n")
+            return subprocess.CompletedProcess(argv, 0, "done", "")  # no session
+        return real_run(argv, **kw)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    with pytest.raises(w.WorkerError, match="payload evidence failure"):
+        code.run(worker="pxx", target_repo=str(repo))
+    recs = [r for r in (json.loads(l) for l in open("artifacts/envelope.jsonl"))
+            if r.get("record_type") == "worker_call"]
+    assert len(recs) == 1 and recs[0]["payload_mode_expected"] == "default"
+    status = subprocess.run(["git", "status", "--porcelain"], cwd=repo,
+                            capture_output=True, text=True).stdout
+    assert status == ""  # unevidenced change discarded — resume not blocked
 
 def test_code_resume_refuses_cross_lifecycle_and_dirty_tree(tmp_path, monkeypatch):
     pipe, repo = tmp_path / "pipe", tmp_path / "repo"

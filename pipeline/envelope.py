@@ -250,9 +250,22 @@ def reconcile(artifacts_dir="artifacts"):
             report["failures"].append(
                 f"MISSING_RECORD: phase {phase} declared real ({kind}) but has no "
                 f"worker_call record — evidence failure, not 'not applicable'")
-    # 2. artifact hash integrity: every hashed artifact must exist and match
-    for c in calls:
+    # 2. artifact hash integrity: the LATEST record for a (phase, artifact)
+    # pair must exist and match the live file. Retry-aware (owner find
+    # 2026-10-06): a retried phase overwrites its fixed-path artifacts
+    # (transcripts, logs), so an earlier attempt's record can never match the
+    # live bytes again — its evidence lives in the preserved stop bundle.
+    # Gate sequencing (check 4) already legitimizes fail-then-pass retries;
+    # hash re-verification applies the same rule. Superseded records are
+    # skipped here, not failed and not silently dropped from the report.
+    last_call = {}
+    for idx, c in enumerate(calls):
+        for name in c.get("artifact_hashes", {}):
+            last_call[(c["phase"], name)] = idx
+    for idx, c in enumerate(calls):
         for name, h in c.get("artifact_hashes", {}).items():
+            if last_call[(c["phase"], name)] != idx:
+                continue  # superseded by a later attempt — see above
             if h.startswith("MISSING:"):
                 report["failures"].append(
                     f"MISSING_ARTIFACT: {c['phase']} {c.get('task_id', '')}: {name} "
@@ -379,7 +392,14 @@ def reconcile(artifacts_dir="artifacts"):
     report["checks"] = {"declared_real_phases": sorted(p for p, k in declared.items()
                                                        if k != "mock"),
                         "worker_calls": len(calls), "gate_records": len(gates),
-                        "sidecar_chain": ("verified" if chained and not unchained
+                        # The genesis record is unchained BY DESIGN (_append
+                        # only chains when prior lines exist), so "verified"
+                        # means a chain exists and at most the head lacks the
+                        # field. Chain-INTEGRITY failures are reported above;
+                        # this string is only the summary (owner find
+                        # 2026-10-06: the old form made "verified" unreachable
+                        # and reported BROKEN on every valid envelope).
+                        "sidecar_chain": ("verified" if chained and unchained <= 1
                                           else "absent-legacy" if not chained
                                           else "BROKEN")}
     report["ok"] = not report["failures"]

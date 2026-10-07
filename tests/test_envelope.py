@@ -195,6 +195,51 @@ def test_reconcile_payload_receipt_missing_on_failure_exit_skipped(tmp_path, mon
     assert not any("PAYLOAD_RECEIPT_MISSING" in f for f in rep["failures"])
 
 
+def test_reconcile_sidecar_chain_summary_verified(tmp_path, monkeypatch):
+    """Owner find 2026-10-06: the genesis record is unchained BY DESIGN, so a
+    valid envelope must summarize as 'verified' — never BROKEN (the old form
+    made 'verified' unreachable). Chain-integrity failures still land in
+    `failures`; this pins only the summary string."""
+    monkeypatch.chdir(tmp_path)
+    _full_run(tmp_path)
+    rep = envelope.reconcile()
+    assert rep["checks"]["sidecar_chain"] == "verified"
+
+
+def test_reconcile_retry_superseded_artifact_not_failed(tmp_path, monkeypatch):
+    """Retry-aware hash re-verification (owner find 2026-10-06): a retried
+    phase overwrites its fixed-path transcript, so only the LATEST record
+    for a (phase, artifact) pair re-verifies against the live file. The
+    superseded attempt's evidence lives in the preserved stop bundle."""
+    monkeypatch.chdir(tmp_path)
+    os.makedirs("artifacts", exist_ok=True)
+    envelope.emit_run_manifest({"code": "pxx"})
+    open("artifacts/t.log", "w").write("attempt 1")
+    envelope.emit_worker_call(**_call(artifacts={"t.log": "artifacts/t.log"}))
+    open("artifacts/t.log", "w").write("attempt 2")  # retry overwrites
+    envelope.emit_worker_call(**_call(artifacts={"t.log": "artifacts/t.log"}))
+    rep = envelope.reconcile()
+    assert not any("HASH_MISMATCH" in f for f in rep["failures"])
+    open("artifacts/t.log", "w").write("tampered")  # the LATEST must match
+    rep = envelope.reconcile()
+    assert any("HASH_MISMATCH" in f for f in rep["failures"])
+
+
+def test_reconcile_default_receipt_consistent_passes(tmp_path, monkeypatch):
+    """Owner find 2026-10-06: the code path now records the observed DEFAULT
+    payload receipt — expected == observed == default reconciles clean, and
+    a successful code call no longer trips PAYLOAD_RECEIPT_MISSING."""
+    monkeypatch.chdir(tmp_path)
+    _full_run(tmp_path)
+    envelope.emit_worker_call(**_call(pxx_session_id="deafbeef00112233",
+                                      payload_mode_expected="default",
+                                      payload_mode="default",
+                                      system_message_present=True,
+                                      tools_key_present=True, tool_count=9))
+    rep = envelope.reconcile()
+    assert rep["ok"], rep["failures"]
+
+
 def test_reconcile_gate_fail_with_later_gate_fails(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _full_run(tmp_path)

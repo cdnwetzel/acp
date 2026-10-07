@@ -136,6 +136,35 @@ def test_payload_receipt_unknown_session_fails_loud(tmp_path, monkeypatch):
     with pytest.raises(w.WorkerError, match="no prompt_rendered audit event"):
         w.payload_receipt("000000000000", state_dir)
 
+# ------------------------------------------------- default payload evidence
+
+DEFAULT_OUTCOME_LINE = ("[COMPLETED] OK (rounds=2 tokens=120 diff_lines=40 "
+                        f"session={DEFAULT_SESSION})\n")
+
+def test_default_payload_evidence_ok(tmp_path, monkeypatch):
+    """Owner find 2026-10-06: the agentic `pxx run` path reads the same
+    observed-payload receipt, expecting the DEFAULT shape."""
+    _fake_audit(tmp_path, monkeypatch)
+    fields, failure = w.default_payload_evidence(DEFAULT_OUTCOME_LINE)
+    assert failure is None
+    assert fields["payload_mode_expected"] == "default"
+    assert fields["payload_mode"] == "default"
+    assert fields["pxx_session_id"] == DEFAULT_SESSION
+    assert fields["tool_count"] == 9 and fields["system_message_present"]
+
+def test_default_payload_evidence_bare_observed_fails(tmp_path, monkeypatch):
+    """Config said default but the audit stream observed bare — an evidence
+    failure, not a model failure."""
+    _fake_audit(tmp_path, monkeypatch)
+    fields, failure = w.default_payload_evidence(OUTCOME_LINE)  # bare session
+    assert fields["payload_mode"] == "bare"
+    assert "PAYLOAD EVIDENCE FAILURE" in failure
+
+def test_default_payload_evidence_no_session_fails():
+    fields, failure = w.default_payload_evidence("[COMPLETED] OK (rounds=1)\n")
+    assert fields["payload_mode_expected"] == "default"
+    assert "no session=<id>" in failure
+
 def test_payload_receipt_yesterday_fallback(tmp_path, monkeypatch):
     yesterday = datetime.date.today() - datetime.timedelta(days=1)
     state_dir = _fake_audit(tmp_path, monkeypatch, day=yesterday)

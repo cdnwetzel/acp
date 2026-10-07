@@ -7,7 +7,8 @@ contract: the plan tasks only — never full pipeline state (invariant 3).
 """
 import json, os, subprocess, time
 from pipeline.worker import (ISOLATION_TOML, WorkerError, check_access,
-                             classify_pxx_failure, pxx_bin, pxx_env,
+                             classify_pxx_failure, default_payload_evidence,
+                             pxx_bin, pxx_env,
                              scope_offenders, write_transcript)
 
 PHASE = "code"
@@ -147,6 +148,13 @@ def _run_pxx(target_repo):
             tpath = f"artifacts/diff/{task['id']}.transcript.log"
             write_transcript(tpath, argv, prompt, r)
             from pipeline import envelope
+            # Observed-payload receipt for successful invocations (owner find
+            # 2026-10-06): 'config said default' is not evidence the request
+            # WAS default — a clean exit without the receipt is an evidence
+            # failure. Failure exits skip the read (reconcile skips them too).
+            payload, evidence_failure = {"payload_mode_expected": "default"}, None
+            if r.returncode == 0:
+                payload, evidence_failure = default_payload_evidence(r.stdout)
             envelope.emit_worker_call(
                 phase="code", task_id=task["id"], planned="pxx:run",
                 invoked="pxx:run", command=" ".join(argv),
@@ -157,12 +165,26 @@ def _run_pxx(target_repo):
                 artifacts={tpath: tpath},
                 runtime=envelope.pxx_version(), iso_config=ISOLATION_TOML,
                 # agentic `pxx run` path — pxx refuses bare outside ask/plan,
-                # so this stays on the base TOML; no payload receipt read.
-                payload_mode_expected="default",
+                # so this stays on the base TOML; the receipt proves it.
                 limitations=[] if r.returncode == 0 else
-                            [f"nonzero exit rc={r.returncode} — classified, no retry"])
+                            [f"nonzero exit rc={r.returncode} — classified, no retry"],
+                **payload)
             if r.returncode != 0:
                 raise classify_pxx_failure(prompt, r, tpath)
+            if evidence_failure:
+                # the tree was verified clean at phase start, so every write
+                # came from this unevidenced invocation — discard it like a
+                # scope violation, never leave residue that blocks resume.
+                subprocess.run(["git", "add", "-A"], cwd=target_repo, check=True,
+                               capture_output=True)
+                touched = subprocess.run(["git", "diff", "--cached", "--name-only"],
+                                         capture_output=True, text=True,
+                                         cwd=target_repo).stdout.split()
+                subprocess.run(["git", "reset", "-q"], cwd=target_repo, check=True,
+                               capture_output=True)
+                _restore_repo(target_repo, touched)
+                raise WorkerError(f"{evidence_failure} — transcript {tpath}; "
+                                  f"unevidenced change discarded, repo restored")
             subprocess.run(["git", "add", "-A"], cwd=target_repo, check=True,
                            capture_output=True)
             changed = subprocess.run(["git", "diff", "--cached", "--name-only"],

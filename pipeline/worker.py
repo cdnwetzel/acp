@@ -249,6 +249,33 @@ def bare_payload_evidence(stdout):
                         f"not a model failure")
     return fields, None
 
+def default_payload_evidence(stdout):
+    """Receipt bundle for an agentic `pxx run` invocation (base ISOLATION_TOML —
+    pxx refuses bare outside ask/plan). Same observed-payload discipline as
+    bare_payload_evidence, expecting the DEFAULT payload (system message +
+    tools present). A missing session id, a missing audit event, or an
+    observed non-default payload is an EVIDENCE failure, not a model failure
+    (owner find 2026-10-06: the code path declared expected=default but never
+    read the receipt — reconcile's P1 rule then failed every clean run)."""
+    fields = {"payload_mode_expected": "default"}
+    session_id = extract_pxx_session(stdout)
+    if session_id is None:
+        return fields, ("payload evidence failure: no session=<id> in the pxx "
+                        "outcome line — cannot evidence the payload shape "
+                        "(pxx >= 2.6.2 prints it); not a model failure")
+    fields["pxx_session_id"] = session_id
+    try:
+        fields.update(payload_receipt(session_id))
+    except WorkerError as e:
+        return fields, f"payload evidence failure: {e}"
+    if fields["payload_mode"] != "default":
+        return fields, (f"PAYLOAD EVIDENCE FAILURE: intended the default "
+                        f"(agentic) payload but the observed request had "
+                        f"payload_mode={fields['payload_mode']!r} (session "
+                        f"{session_id}) — config said default, the audit "
+                        f"stream says otherwise; not a model failure")
+    return fields, None
+
 def pxx_env():
     """Subprocess environment with every PXX_* var stripped — endpoint and
     model come from the manifest via argv, never from ambient config."""
