@@ -111,9 +111,10 @@ first fully-clean-reconcile green lifecycle at `gate_open:validate`
 Nemotron-nothink 0/16 and disqualified as reviewer (ledger 124; pxx
 2.6.5 `chat_template_kwargs` shipped for that probe); the witnessed
 human VALIDATE was APPROVED by the owner, scope-limited to the drill
-lifecycle's procedure (repo ledger 125, sandbox seq 19). Reviewer
-adoption (REVIEW -> gpt-oss:20b, endpoints.json) is the pending owner
-decision; VERIFY/Nemotron stays parked behind the C3 tunnel retarget.
+lifecycle's procedure (repo ledger 125, sandbox seq 19). 2026-10-08:
+REVIEW adopted to gpt-oss:20b on Asrock (owner-approved; supervised
+:11435 forward, launchd local.acp.forward-11435); VERIFY/Nemotron stays
+parked behind the C3 tunnel retarget.
 
 ## Code style and design rules
 

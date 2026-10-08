@@ -24,6 +24,10 @@
     <string>BatchMode=yes</string>
     <string>-o</string>
     <string>ExitOnForwardFailure=yes</string>
+    <string>-o</string>
+    <string>ControlMaster=no</string>
+    <string>-o</string>
+    <string>ControlPath=none</string>
     <string>chris@10.0.1.125</string>
   </array>
   <key>RunAtLoad</key>

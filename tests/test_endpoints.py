@@ -2,11 +2,22 @@ import pytest
 from pipeline import endpoints, runner
 
 def test_governed_phases_route_via_8004_proxy():
-    for phase in ("intake", "plan", "code", "review"):
+    for phase in ("intake", "plan", "code"):
         e = endpoints.resolve(phase)
         assert e["endpoint"] == "http://127.0.0.1:8004"
         assert e["access"] == "ssh-local-forward"
         assert "8004:127.0.0.1:8004" in e["forward"]
+
+def test_review_routes_to_asrock_gpt_oss():
+    # Owner adoption 2026-10-08 (ledger 122/123/124): REVIEW moved off the
+    # author's model/stack to gpt-oss:20b on Asrock via the supervised
+    # :11435 forward. Detection 24/32 over two days vs incumbent 4/16.
+    e = endpoints.resolve("review")
+    assert e["endpoint"] == "http://127.0.0.1:11435"
+    assert e["access"] == "ssh-local-forward"
+    assert "11435:127.0.0.1:11434" in e["forward"]
+    assert e["model"] == "gpt-oss:20b"
+    assert e["provider"] == "ollama"
 
 def test_verify_routes_to_asrock():
     e = endpoints.resolve("verify")

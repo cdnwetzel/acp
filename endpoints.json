@@ -32,14 +32,14 @@
       "supervision": "launchd local.acp.forward-8004 (ops/launchd/local.acp.forward-8004.plist; probe: ops/forward-8004-status.sh) \u2014 operator infrastructure, KeepAlive; the pipeline still never starts the forward itself"
     },
     "review": {
-      "worker": "governed-27b",
-      "endpoint": "http://127.0.0.1:8004",
+      "worker": "asrock-gpt-oss",
+      "endpoint": "http://127.0.0.1:11435",
       "access": "ssh-local-forward",
-      "forward": "ssh -N -L 8004:127.0.0.1:8004 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes chris@10.0.1.125",
-      "model": "qwen3.8-27b",
-      "provider": "vllm",
-      "note": "D4: governed path only. (base URL WITHOUT /v1 \u2014 pxx appends /v1/chat/completions itself; doubled /v1/v1 404s)",
-      "supervision": "launchd local.acp.forward-8004 (ops/launchd/local.acp.forward-8004.plist; probe: ops/forward-8004-status.sh) \u2014 operator infrastructure, KeepAlive; the pipeline still never starts the forward itself"
+      "forward": "ssh -N -L 11435:127.0.0.1:11434 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes chris@10.0.1.115",
+      "model": "gpt-oss:20b",
+      "provider": "ollama",
+      "note": "Owner adoption 2026-10-08 (ledger 122/123: seeded-defect detection 24/32 over two days vs incumbent qwen2.5:14b 4/16; ledger 124: Nemotron-nothink 0/16 disqualified). Independent OpenAI lineage vs the qwen3.8-27b author (T5810/vLLM); shares host+stack with VERIFY but not model \u2014 verifier!=author stays runtime-enforced. Loud-stops gate_review on unresolved findings (disposition-less defects are the desired stop). (base URL WITHOUT /v1 \u2014 pxx appends /v1/chat/completions itself)",
+      "supervision": "launchd local.acp.forward-11435 (ops/launchd/local.acp.forward-11435.plist; probe: ops/forward-11435-status.sh) \u2014 operator infrastructure, KeepAlive; the pipeline still never starts the forward itself"
     },
     "test": {
       "worker": "local",
@@ -88,7 +88,16 @@
       "access": "lan",
       "provider": "ollama",
       "model": "qwen2.5:14b-instruct-q4_k_m",
-      "note": "INTENTIONAL Asrock/Ollama route for independent-review drills (owner-accepted 2026-10-03): separate machine + serving stack (Ollama vs vLLM), preflight-asserted vs the CODE worker. Same fail-closed controls as governed phases (isolated pxx.toml rewritten per invocation, PXX_* stripped). Does NOT replace the documented :8007 verifier route \u2014 :8007's request contract is unprobed and its adoption is a separate owner decision."
+      "note": "INTENTIONAL Asrock/Ollama route for independent-review drills (owner-accepted 2026-10-03): separate machine + serving stack (Ollama vs vLLM), preflight-asserted vs the CODE worker. Same fail-closed controls as governed phases (isolated pxx.toml rewritten per invocation, PXX_* stripped). Does NOT replace the documented :8007 verifier route \u2014 :8007's request contract is unprobed and its adoption is a separate owner decision. SUPERSEDED as REVIEW worker 2026-10-08 by asrock-gpt-oss (detection 4/16 vs 24/32); retained as the VERIFY endpoint's reviewer-of-record."
+    },
+    "asrock-gpt-oss": {
+      "worker": "asrock-gpt-oss",
+      "endpoint": "http://127.0.0.1:11435",
+      "access": "ssh-local-forward",
+      "forward": "ssh -N -L 11435:127.0.0.1:11434 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes chris@10.0.1.115",
+      "provider": "ollama",
+      "model": "gpt-oss:20b",
+      "note": "Owner-adopted REVIEW worker 2026-10-08 (ledger 122/123/124): seeded-defect detection 24/32 across two days; independent OpenAI lineage vs the qwen3.8-27b author. Same fail-closed controls as governed phases. Supervision: launchd local.acp.forward-11435 (probe: ops/forward-11435-status.sh)."
     }
   }
 }
