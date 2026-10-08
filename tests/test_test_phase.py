@@ -14,6 +14,7 @@ class _Result:
 def _fake_run(seen):
     def run(cmd, **kw):
         seen["cmd"] = cmd
+        seen["env"] = kw.get("env")
         return _Result()
     return run
 
@@ -42,3 +43,4 @@ def test_real_run_invokes_pytest_verbose(tmp_path, monkeypatch):
     log = test_phase._run_target(str(tmp_path))
     _assert_verbose(seen["cmd"])
     assert "test_a PASSED" in open(log).read()
+    assert seen["env"]["PYTHONDONTWRITEBYTECODE"] == "1"

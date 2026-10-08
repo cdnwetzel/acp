@@ -173,17 +173,32 @@ def require_bare_capable(binary):
             f"requires >= 2.6.2; upgrade pxx, no fallback to scaffolded mode")
 
 def extract_pxx_session(stdout):
-    """The run's session id from pxx's CLI outcome line (`session=<hex>`,
-    pxx >= 2.6.2, e.g. `[COMPLETED] OK (rounds=1 tokens=85 diff_lines=0
-    session=26c341b826c6)`). None on old-format output."""
-    for line in (stdout or "").splitlines():
+    """Extract pxx's session from a recognized outcome block only.
+
+    pxx may emit a compact one-line outcome or a multiline summary/JSON
+    outcome whose structured session metadata is on the closing line.
+    Arbitrary prompt/output text is never searched as a session source.
+    """
+    lines = (stdout or "").splitlines()
+    prefixes = ("[COMPLETED]", "[OUTCOME]", "[DONE]")
+    metadata = re.compile(
+        r"\(\s*rounds=\d+\s+tokens=\d+\s+diff_lines=\d+\s+"
+        r"session=([0-9a-f]+)\s*\)\s*$"
+    )
+    for index, line in enumerate(lines):
         stripped = line.strip()
-        if not any(stripped.startswith(prefix)
-                   for prefix in ("[COMPLETED]", "[OUTCOME]", "[DONE]")):
+        if not any(stripped.startswith(prefix) for prefix in prefixes):
             continue
         m = re.search(r"\bsession=([0-9a-f]+)\b", stripped)
         if m:
             return m.group(1)
+        for continuation in lines[index + 1:]:
+            closing = continuation.strip()
+            if closing.startswith(prefixes):
+                break
+            m = metadata.search(closing)
+            if m:
+                return m.group(1)
     return None
 
 def _pxx_state_dir():
@@ -315,8 +330,11 @@ def default_payload_evidence(stdout):
 
 def pxx_env():
     """Subprocess environment with every PXX_* var stripped — endpoint and
-    model come from the manifest via argv, never from ambient config."""
-    return {k: v for k, v in os.environ.items() if not k.startswith("PXX_")}
+    model come from the manifest via argv, never from ambient config. Python
+    workers must not leave bytecode artifacts in the target repository."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("PXX_")}
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    return env
 
 def check_access(ep):
     """Verify a governed endpoint's access requirement — and NEVER start it

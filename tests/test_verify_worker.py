@@ -192,9 +192,9 @@ def test_prompt_demands_pipe_delimited_rows(tmp_path, monkeypatch):
     monkeypatch.setattr(verify.subprocess, "run", capturing)
     verify.run(worker="pxx")
     prompt = next(a for argv in sent for i, a in enumerate(argv) if i and argv[i - 1] == "-m")
-    assert "MUST begin with `|` and end with `|`" in prompt
-    assert "exactly one pipe-delimited data row per acceptance criterion" in prompt
-    assert "whose first character is not `|` is invalid" in prompt
+    assert "Each row must start and end with `|`" in prompt
+    assert "exactly one pipe-delimited data row for each criterion" in prompt
+    assert "do not output any prose between" in prompt
 
 EP = {"model": "qwen2.5:14b-instruct-q4_k_m", "endpoint": "http://10.0.1.115:11434",
       "provider": "ollama", "worker": "asrock-verifier"}

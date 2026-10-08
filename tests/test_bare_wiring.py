@@ -45,6 +45,14 @@ def _fake_audit(tmp_path, monkeypatch, day=None):
     return str(state_dir / "pxx")
 
 
+def test_pxx_env_strips_pxx_and_disables_bytecode(monkeypatch):
+    monkeypatch.setenv("PXX_VLLM_URL", "ambient")
+    monkeypatch.setenv("PYTHONDONTWRITEBYTECODE", "0")
+    env = w.pxx_env()
+    assert not any(key.startswith("PXX_") for key in env)
+    assert env["PYTHONDONTWRITEBYTECODE"] == "1"
+
+
 # ---------------------------------------------------------- TOML split
 
 def test_bare_toml_adds_bare_true_base_stays_agentic():
@@ -113,6 +121,22 @@ def test_version_floor_rejects_nonzero_exit(monkeypatch):
 def test_extract_pxx_session_parses_outcome_line():
     assert w.extract_pxx_session(OUTCOME_LINE) == BARE_SESSION
 
+def test_extract_pxx_session_parses_split_json_outcome_metadata():
+    out = (
+        '[COMPLETED] {\n'
+        '  "problem": "ok"\n'
+        f'}} (rounds=1 tokens=3 diff_lines=0 session={BARE_SESSION})\n'
+    )
+    assert w.extract_pxx_session(out) == BARE_SESSION
+
+def test_extract_pxx_session_parses_split_summary_outcome_metadata():
+    out = (
+        '[COMPLETED] Done. Summary:\n'
+        '- **Change**: calc.py updated\n'
+        f'[net: pxx-pre+stash] (rounds=4 tokens=10 diff_lines=6 session={BARE_SESSION})\n'
+    )
+    assert w.extract_pxx_session(out) == BARE_SESSION
+
 def test_extract_pxx_session_returns_none_on_old_format():
     old = "[COMPLETED] OK (rounds=1 tokens=85 diff_lines=0)\n"
     assert w.extract_pxx_session(old) is None
@@ -121,6 +145,14 @@ def test_extract_pxx_session_returns_none_on_old_format():
 def test_extract_pxx_session_ignores_prompt_text_decoy():
     out = "prompt mentions session=deadbeef\n[COMPLETED] OK (session=feedface)\n"
     assert w.extract_pxx_session(out) == "feedface"
+
+def test_extract_pxx_session_ignores_post_outcome_decoy():
+    out = '[COMPLETED] {"problem": "ok"}\n}\nnotes session=deadbeef\n'
+    assert w.extract_pxx_session(out) is None
+
+def test_extract_pxx_session_ignores_unstructured_summary_decoy():
+    out = '[COMPLETED] Done. Summary:\nnotes session=deadbeef\n'
+    assert w.extract_pxx_session(out) is None
 
 
 # ---------------------------------------------------------- payload receipt

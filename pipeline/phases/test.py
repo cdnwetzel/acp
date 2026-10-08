@@ -27,6 +27,12 @@ import json, os, subprocess, sys, time
 PHASE = "test"
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+def _pytest_env():
+    """Run pytest without leaving interpreter cache artifacts in the target."""
+    env = os.environ.copy()
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    return env
+
 def _parse_skips(out):
     """Skip identities + reasons from pytest's structured short summary (-rs).
     Reason text may be empty — the GATE rejects reason-less skips; nothing
@@ -60,7 +66,8 @@ def run(mock=False, worker=None, target_repo=None):
         raise NotImplementedError("worker not wired for phase " + PHASE)
     cmd = [sys.executable, "-m", "pytest", "tests/test_state.py", "-v", "-rs"]
     t0 = time.monotonic()
-    r = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO_ROOT)
+    r = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO_ROOT,
+                       env=_pytest_env())
     return _write_log(" ".join(cmd) + f" (cwd={REPO_ROOT})",
                       r.returncode, time.monotonic() - t0, r.stdout, r.stderr)
 
@@ -69,7 +76,8 @@ def _run_target(target_repo):
         raise ValueError(f"TEST real worker needs a valid target_repo, got: {target_repo!r}")
     cmd = [sys.executable, "-m", "pytest", ".", "-v", "-rs"]
     t0 = time.monotonic()
-    r = subprocess.run(cmd, capture_output=True, text=True, cwd=target_repo)
+    r = subprocess.run(cmd, capture_output=True, text=True, cwd=target_repo,
+                       env=_pytest_env())
     duration = time.monotonic() - t0
     log = _write_log(" ".join(cmd) + f" (cwd={target_repo})",
                      r.returncode, duration, r.stdout, r.stderr)
