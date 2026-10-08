@@ -13,7 +13,8 @@ from pipeline.worker import (ISOLATION_TOML_BARE, WorkerError,
                              bare_payload_evidence, check_access,
                              classify_pxx_failure, git_boundary_snapshot,
                              pxx_bin, pxx_env, require_bare_capable,
-                             scope_offenders, write_transcript)
+                             scope_offenders, write_transcript,
+                             PXX_ASK_TIMEOUT_SECONDS)
 
 PHASE = "review"
 
@@ -135,8 +136,22 @@ def _run_pxx(target_repo, reviewer=None):
                     "--budget-rounds", "6", "--budget-seconds", "600",
                     "--no-memory", "--sandbox"]
             t0 = time.monotonic()
-            r = subprocess.run(argv, capture_output=True, text=True,
-                               cwd=cwd, env=pxx_env())
+            timed_out = False
+            try:
+                r = subprocess.run(argv, capture_output=True, text=True,
+                                   cwd=cwd, env=pxx_env(),
+                                   timeout=PXX_ASK_TIMEOUT_SECONDS)
+            except subprocess.TimeoutExpired as e:
+                timed_out = True
+                stdout = e.stdout or ""
+                stderr = e.stderr or ""
+                if isinstance(stdout, bytes):
+                    stdout = stdout.decode(errors="replace")
+                if isinstance(stderr, bytes):
+                    stderr = stderr.decode(errors="replace")
+                r = subprocess.CompletedProcess(
+                    argv, -1, stdout,
+                    f"timeout after {PXX_ASK_TIMEOUT_SECONDS}s\n{stderr}")
             duration = time.monotonic() - t0
             tpath = f"artifacts/diff/{d['task']}.review.transcript.log"
             write_transcript(tpath, argv, prompt, r, iso_config=ISOLATION_TOML_BARE)
@@ -156,6 +171,10 @@ def _run_pxx(target_repo, reviewer=None):
                             if r.returncode != 0 else
                             [evidence_failure] if evidence_failure else [],
                 **payload)
+            if timed_out:
+                raise WorkerError(
+                    f"pxx REVIEW timed out after {PXX_ASK_TIMEOUT_SECONDS}s — "
+                    f"see {tpath}")
             if r.returncode != 0:
                 raise classify_pxx_failure(prompt, r, tpath)
             if evidence_failure:  # observed payload was NOT bare — evidence failure

@@ -82,7 +82,7 @@ def _fake_bare_pxx(tmp_path, monkeypatch, ask_stdout):
     """Hermetic pxx for the bare-mode wiring (2026-10-05): --version answers
     2.6.2, the ask returns ask_stdout, and the audit stream evidences a bare
     payload for the session id in the outcome line."""
-    import datetime, subprocess, types
+    import datetime, hashlib, subprocess, types
     monkeypatch.setattr(verify, "pxx_bin", lambda: "/fake/pxx")
     def fake_run(argv, **kw):
         if "--version" in argv:
@@ -96,12 +96,18 @@ def _fake_bare_pxx(tmp_path, monkeypatch, ask_stdout):
                        "data": {"payload_mode": "bare", "system_message_present": False,
                                 "tools_key_present": False, "tool_count": 0},
                        "session_id": "26c341b826c6", "seq": 1, "ts": "t"},
-             "hash": "0" * 64, "prev_hash": "0" * 64}
+             "hash": "", "prev_hash": "0" * 64}
+    event["hash"] = hashlib.sha256(
+        (event["prev_hash"] + json.dumps(event["event"], sort_keys=True)).encode()
+    ).hexdigest()
+    day = datetime.date.today().isoformat()
     (audit / f"{datetime.date.today().isoformat()}.jsonl").write_text(
         json.dumps(event) + "\n")
+    (audit / f"{day}.head").write_text(
+        json.dumps({"count": 1, "hash": event["hash"]}) + "\n")
     monkeypatch.setenv("XDG_STATE_HOME", str(state_dir))
 
-OUTCOME_SESSION = " (rounds=1 tokens=3 diff_lines=0 session=26c341b826c6)\n"
+OUTCOME_SESSION = "[COMPLETED] OK (rounds=1 tokens=3 diff_lines=0 session=26c341b826c6)\n"
 
 def test_run_pxx_refuses_to_write_non_traced_document(tmp_path, monkeypatch):
     """Phase-level: a corrupt-quoted document is refused BEFORE write — the

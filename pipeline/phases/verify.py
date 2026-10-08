@@ -14,7 +14,7 @@ from pipeline.worker import (ISOLATION_TOML_BARE, WorkerError,
                              bare_payload_evidence, check_access,
                              classify_pxx_failure, git_boundary_snapshot,
                              pxx_bin, pxx_env, require_bare_capable,
-                             write_transcript)
+                             write_transcript, PXX_ASK_TIMEOUT_SECONDS)
 
 PHASE = "verify"
 
@@ -111,8 +111,22 @@ def _run_pxx(target_repo):
             with open(iso_path, "w") as f:
                 f.write(ISOLATION_TOML_BARE)
         t0 = time.monotonic()
-        r = subprocess.run(argv, capture_output=True, text=True,
-                           cwd=cwd, env=pxx_env())
+        timed_out = False
+        try:
+            r = subprocess.run(argv, capture_output=True, text=True,
+                               cwd=cwd, env=pxx_env(),
+                               timeout=PXX_ASK_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired as e:
+            timed_out = True
+            stdout = e.stdout or ""
+            stderr = e.stderr or ""
+            if isinstance(stdout, bytes):
+                stdout = stdout.decode(errors="replace")
+            if isinstance(stderr, bytes):
+                stderr = stderr.decode(errors="replace")
+            r = subprocess.CompletedProcess(
+                argv, -1, stdout,
+                f"timeout after {PXX_ASK_TIMEOUT_SECONDS}s\n{stderr}")
     finally:
         if iso_original is not None:
             with open(iso_path, "wb") as f:  # ADV-017: restore, never delete
@@ -138,6 +152,10 @@ def _run_pxx(target_repo):
                     if r.returncode != 0 else
                     [evidence_failure] if evidence_failure else [],
         **payload)
+    if timed_out:
+        raise WorkerError(
+            f"pxx VERIFY timed out after {PXX_ASK_TIMEOUT_SECONDS}s — see "
+            f"artifacts/verify.transcript.log")
     if r.returncode != 0:
         raise classify_pxx_failure(prompt, r, "artifacts/verify.transcript.log")
     if evidence_failure:  # observed payload was NOT bare — evidence failure

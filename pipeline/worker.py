@@ -4,7 +4,7 @@ Both CODE and REVIEW real paths consume these so the governed-endpoint
 discipline lives in exactly one place (step-2 conditions, fail-closed
 fallback, explicit scope, C7 PATH lesson).
 """
-import json, os, re, socket, subprocess
+import json, os, re, subprocess
 
 ISOLATION_TOML = (
     "# ACP-managed run isolation. Empty fallback chain: a governed-phase failure\n"
@@ -141,6 +141,7 @@ def pxx_bin():
     raise WorkerError("pxx binary not found (checked PATH, ~/miniforge3/bin, ~/.local/bin)")
 
 BARE_MIN_VERSION = (2, 6, 2)  # pxx 7360533: Settings.bare + session= outcome line
+PXX_ASK_TIMEOUT_SECONDS = 120
 
 def require_bare_capable(binary):
     """Fail-loud feature detection for bare mode: probe `<binary> --version`
@@ -175,8 +176,15 @@ def extract_pxx_session(stdout):
     """The run's session id from pxx's CLI outcome line (`session=<hex>`,
     pxx >= 2.6.2, e.g. `[COMPLETED] OK (rounds=1 tokens=85 diff_lines=0
     session=26c341b826c6)`). None on old-format output."""
-    m = re.search(r"\bsession=([0-9a-f]+)\b", stdout or "")
-    return m.group(1) if m else None
+    for line in (stdout or "").splitlines():
+        stripped = line.strip()
+        if not any(stripped.startswith(prefix)
+                   for prefix in ("[COMPLETED]", "[OUTCOME]", "[DONE]")):
+            continue
+        m = re.search(r"\bsession=([0-9a-f]+)\b", stripped)
+        if m:
+            return m.group(1)
+    return None
 
 def _pxx_state_dir():
     """pxx's state dir: $XDG_STATE_HOME/pxx, else ~/.local/state/pxx (matches
@@ -198,6 +206,7 @@ def payload_receipt(session_id, state_dir=None):
         path = os.path.join(state_dir, "audit", f"{day.isoformat()}.jsonl")
         if not os.path.exists(path):
             continue
+        _verify_pxx_audit(path)
         for line in open(path):
             if not line.strip():
                 continue
@@ -222,6 +231,34 @@ def payload_receipt(session_id, state_dir=None):
         f"no prompt_rendered audit event for pxx session {session_id} under "
         f"{state_dir}/audit (today/yesterday local dates) — cannot evidence "
         f"the payload shape; the run is NOT bare-mode evidence")
+
+def _verify_pxx_audit(path):
+    """Verify pxx's JSONL chain and .head anchor before accepting evidence."""
+    import hashlib
+    prev = "0" * 64
+    count = 0
+    try:
+        with open(path) as fh:
+            for raw in fh:
+                if not raw.strip():
+                    continue
+                rec = json.loads(raw)
+                if rec.get("prev_hash") != prev:
+                    raise ValueError(f"prev_hash mismatch at record {count + 1}")
+                payload = json.dumps(rec["event"], sort_keys=True)
+                digest = hashlib.sha256((prev + payload).encode()).hexdigest()
+                if rec.get("hash") != digest:
+                    raise ValueError(f"hash mismatch at record {count + 1}")
+                prev = digest
+                count += 1
+        with open(os.path.splitext(path)[0] + ".head") as fh:
+            head = json.load(fh)
+        if head.get("count") != count or head.get("hash") != prev:
+            raise ValueError(".head does not match the verified log tail")
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as e:
+        raise WorkerError(
+            f"pxx audit verification failed for {path}: {e} — cannot accept "
+            f"the payload receipt as evidence") from e
 
 def bare_payload_evidence(stdout):
     """Receipt bundle for a bare-mode ask/plan invocation. Returns
@@ -299,30 +336,46 @@ def check_access(ep):
     except ValueError:
         raise WorkerError(f"endpoint {endpoint!r} has a non-numeric port — "
                           f"malformed manifest entry")
-    if access == "ssh-local-forward":
-        try:
-            socket.create_connection((host, port_i), timeout=3).close()
-        except OSError as e:
-            raise WorkerError(
-                f"governed endpoint unreachable at {ep['endpoint']} ({e}). "
-                f"The ssh local forward is absent — start it with:\n  {ep['forward']}\n"
-                f"(the phase never starts it itself)")
-        return
     import urllib.error, urllib.request
     path = "/api/tags" if ep.get("provider") == "ollama" else "/v1/models"
     url = endpoint.rstrip("/") + path
     try:
         with urllib.request.urlopen(url, timeout=3) as resp:
             status = resp.status
+            body = resp.read()
     except urllib.error.HTTPError as e:
         status = e.code
+        body = b""
     except (OSError, urllib.error.URLError) as e:
+        if access == "ssh-local-forward":
+            raise WorkerError(
+                f"governed endpoint unreachable at {ep['endpoint']} ({e}). "
+                f"The ssh local forward is absent — start it with:\n  {ep['forward']}\n"
+                f"(the phase never starts it itself)")
         raise WorkerError(
             f"governed endpoint unreachable at {url} ({e}) — fail closed; "
             f"no silent fallback, no silent retry")
     if status != 200:
         raise WorkerError(f"governed endpoint {url} answered HTTP {status} — "
                           f"not a healthy serving route; fail closed")
+    expected = ep.get("model")
+    if expected:
+        try:
+            payload = json.loads(body)
+            models = (payload.get("models", [])
+                      if ep.get("provider") == "ollama"
+                      else payload.get("data", []))
+            identities = {item.get("name", item.get("id"))
+                          for item in models if isinstance(item, dict)}
+        except (UnicodeDecodeError, json.JSONDecodeError, AttributeError, TypeError):
+            raise WorkerError(
+                f"governed endpoint {url} returned non-JSON model inventory — "
+                f"cannot prove it serves {expected!r}; fail closed")
+        if expected not in identities:
+            raise WorkerError(
+                f"governed endpoint {url} is healthy but does not expose the "
+                f"expected model {expected!r} (observed {sorted(identities)!r}) — "
+                f"fail closed; no fallback")
 
 def _norm_endpoint(e):
     """Host-alias normalization (ADV-014): localhost and 127.0.0.1 are the

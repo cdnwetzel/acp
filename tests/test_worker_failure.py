@@ -1,6 +1,6 @@
 """Worker failure classification + CODE resume (repair program step 3,
 owner scope 2026-10-04: M-5, ADV-018/L-8, idempotent resume)."""
-import json, os, re, subprocess
+import hashlib, json, os, re, subprocess
 import pytest
 from pipeline import runner, state
 from pipeline import worker as w
@@ -93,9 +93,14 @@ def test_happy_path_single_record_no_limitations(tmp_path, monkeypatch):
                        "data": {"payload_mode": "bare", "system_message_present": False,
                                 "tools_key_present": False, "tool_count": 0},
                        "session_id": session, "seq": 1, "ts": "t"},
-             "hash": "0" * 64, "prev_hash": "0" * 64}
+             "hash": "", "prev_hash": "0" * 64}
+    event["hash"] = hashlib.sha256(
+        (event["prev_hash"] + json.dumps(event["event"], sort_keys=True)).encode()
+    ).hexdigest()
     (audit / f"{datetime.date.today().isoformat()}.jsonl").write_text(
         json.dumps(event) + "\n")
+    (audit / f"{datetime.date.today().isoformat()}.head").write_text(
+        json.dumps({"count": 1, "hash": event["hash"]}) + "\n")
     monkeypatch.setenv("XDG_STATE_HOME", str(state_dir))
     assert w.run_ask(EP, "prompt", "artifacts/t.log", phase="code") == \
         "answer\n" + outcome
@@ -239,9 +244,14 @@ def test_code_run_captures_default_payload_receipt(tmp_path, monkeypatch):
                                 "system_message_present": True,
                                 "tools_key_present": True, "tool_count": 9},
                        "session_id": session, "seq": 1, "ts": "t"},
-             "hash": "0" * 64, "prev_hash": "0" * 64}
+             "hash": "", "prev_hash": "0" * 64}
+    event["hash"] = hashlib.sha256(
+        (event["prev_hash"] + json.dumps(event["event"], sort_keys=True)).encode()
+    ).hexdigest()
     (audit / f"{datetime.date.today().isoformat()}.jsonl").write_text(
         json.dumps(event) + "\n")
+    (audit / f"{datetime.date.today().isoformat()}.head").write_text(
+        json.dumps({"count": 1, "hash": event["hash"]}) + "\n")
     monkeypatch.setenv("XDG_STATE_HOME", str(state_dir))
     assert code.run(worker="pxx", target_repo=str(repo)) == \
         "artifacts/diff/manifest.json"

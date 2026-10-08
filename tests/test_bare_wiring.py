@@ -39,6 +39,8 @@ def _fake_audit(tmp_path, monkeypatch, day=None):
     audit.mkdir(parents=True)
     day = day or datetime.date.today()
     shutil.copy(FIXTURE, audit / f"{day.isoformat()}.jsonl")
+    shutil.copy(FIXTURE.replace(".jsonl", ".head"),
+                audit / f"{day.isoformat()}.head")
     monkeypatch.setenv("XDG_STATE_HOME", str(state_dir))
     return str(state_dir / "pxx")
 
@@ -116,6 +118,10 @@ def test_extract_pxx_session_returns_none_on_old_format():
     assert w.extract_pxx_session(old) is None
     assert w.extract_pxx_session("") is None
 
+def test_extract_pxx_session_ignores_prompt_text_decoy():
+    out = "prompt mentions session=deadbeef\n[COMPLETED] OK (session=feedface)\n"
+    assert w.extract_pxx_session(out) == "feedface"
+
 
 # ---------------------------------------------------------- payload receipt
 
@@ -124,6 +130,8 @@ def test_payload_receipt_reads_bare_and_default_sessions(tmp_path):
     audit = state_dir / "pxx" / "audit"
     audit.mkdir(parents=True)
     shutil.copy(FIXTURE, audit / f"{datetime.date.today().isoformat()}.jsonl")
+    shutil.copy(FIXTURE.replace(".jsonl", ".head"),
+                audit / f"{datetime.date.today().isoformat()}.head")
     bare = w.payload_receipt(BARE_SESSION, str(state_dir / "pxx"))
     assert bare == {"payload_mode": "bare", "system_message_present": False,
                     "tools_key_present": False, "tool_count": 0}
@@ -135,6 +143,19 @@ def test_payload_receipt_unknown_session_fails_loud(tmp_path, monkeypatch):
     state_dir = _fake_audit(tmp_path, monkeypatch)
     with pytest.raises(w.WorkerError, match="no prompt_rendered audit event"):
         w.payload_receipt("000000000000", state_dir)
+
+def test_payload_receipt_rejects_tampered_audit_head(tmp_path):
+    state_dir = tmp_path / "xstate"
+    audit = state_dir / "pxx" / "audit"
+    audit.mkdir(parents=True)
+    day = datetime.date.today().isoformat()
+    shutil.copy(FIXTURE, audit / f"{day}.jsonl")
+    shutil.copy(FIXTURE.replace(".jsonl", ".head"), audit / f"{day}.head")
+    head = json.loads((audit / f"{day}.head").read_text())
+    head["count"] = 3
+    (audit / f"{day}.head").write_text(json.dumps(head))
+    with pytest.raises(w.WorkerError, match="audit verification failed"):
+        w.payload_receipt(BARE_SESSION, str(state_dir / "pxx"))
 
 # ------------------------------------------------- default payload evidence
 
@@ -176,12 +197,18 @@ def test_payload_receipt_fieldless_event_fails_loud_not_keyerror(tmp_path):
     state_dir = tmp_path / "xstate"
     audit = state_dir / "pxx" / "audit"
     audit.mkdir(parents=True)
-    line = json.dumps({"event": {"kind": "prompt_rendered",
+    line = {"event": {"kind": "prompt_rendered",
                                  "session_id": "oldsession01",
                                  "data": {"system_chars": 1999, "tools": 9}},
-                       "hash": "x", "prev_hash": "y"})
+                       "hash": "", "prev_hash": "0" * 64}
+    import hashlib
+    line["hash"] = hashlib.sha256(
+        (line["prev_hash"] + json.dumps(line["event"], sort_keys=True)).encode()
+    ).hexdigest()
     day = datetime.date.today().isoformat()
-    (audit / f"{day}.jsonl").write_text(line + "\n")
+    (audit / f"{day}.jsonl").write_text(json.dumps(line) + "\n")
+    (audit / f"{day}.head").write_text(
+        json.dumps({"count": 1, "hash": line["hash"]}) + "\n")
     with pytest.raises(w.WorkerError, match="lacks the"):
         w.payload_receipt("oldsession01", str(state_dir / "pxx"))
 

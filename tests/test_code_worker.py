@@ -14,15 +14,49 @@ def test_pxx_worker_fails_loudly_when_forward_absent():
         worker.check_access(ep)
 
 def test_pxx_worker_passes_access_check_when_reachable():
-    import socket
-    srv = socket.socket()
-    srv.bind(("127.0.0.1", 0))
-    srv.listen(1)
-    port = srv.getsockname()[1]
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = b'{"data": []}'
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        def log_message(self, *_args):
+            pass
+    srv = HTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=srv.serve_forever, daemon=True)
+    thread.start()
+    port = srv.server_port
     ep = {"endpoint": f"http://127.0.0.1:{port}", "access": "ssh-local-forward",
           "forward": "ssh -N -L ... "}
     worker.check_access(ep)
-    srv.close()
+    srv.shutdown()
+    thread.join()
+
+def test_access_check_requires_expected_model_identity():
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = b'{"data": [{"id": "wrong-model"}]}'
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        def log_message(self, *_args):
+            pass
+    srv = HTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=srv.serve_forever, daemon=True)
+    thread.start()
+    ep = {"endpoint": f"http://127.0.0.1:{srv.server_port}",
+          "access": "ssh-local-forward", "model": "expected-model",
+          "forward": "ssh -N -L ... "}
+    with pytest.raises(worker.WorkerError, match="expected model"):
+        worker.check_access(ep)
+    srv.shutdown()
+    thread.join()
 
 def test_scope_offenders_detects_out_of_scope_edit():
     changed = ["calc.py", "README.md", "src/other.py"]
