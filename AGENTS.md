@@ -96,7 +96,7 @@ python3 -m pipeline.approvals <gate> approve|deny "reason"
 # gates: intake | plan | validate
 ```
 
-**Current test status (2026-10-07): 293 passed, 0 failed**
+**Current test status (2026-10-08): 294 passed, 0 failed**
 (`python3 -m pytest tests/ -q`). C6 (2026-10-03) landed hash-chaining;
 the 2026-10-04 repair program added the legacy-prefix seal (row 78),
 lifecycle identity, hash-bound approvals, strict gate parsers, envelope
@@ -232,11 +232,13 @@ references role slugs; it never duplicates card text.
    decisions: pxx via governed :8004 (operator-started forward, fail-closed
    isolated pxx.toml, PXX_* strip, explicit scope verification, sandbox,
    bounded execution, per-task transcript) for CODE, INTAKE, PLAN; Asrock
-   Ollama :11434 qwen2.5:14b for REVIEW and VERIFY (independence
-   runtime-enforced; shared-stack caveat ledgered); real target-repo pytest
-   for TEST. VALIDATE remains HUMAN-ONLY. Proven in drill scope only —
-   step-5 full fresh lifecycle closed 2026-10-04 (run 11); no production-
-   readiness claim.)*
+   Ollama for REVIEW and VERIFY (independence runtime-enforced; REVIEW
+   adopted to gpt-oss:20b via supervised :11435 forward 2026-10-08,
+   VERIFY remains qwen2.5:14b on :11434 — shared-stack caveat ledgered);
+   real target-repo pytest for TEST. VALIDATE remains HUMAN-ONLY
+   (witnessed drill approval 2026-10-07, scope-limited). Proven in drill
+   scope only — step-5 full fresh lifecycle closed 2026-10-04 (run 11);
+   no production-readiness claim.)*
 6. **Do not install vLLM-Metal on the Mac mini** until the 16GB constraint is
    acknowledged. Docs recommend 36GB+ for larger models.
 7. **Do not attempt fp8 KV on A4500.** Ampere does not support it.
@@ -399,9 +401,12 @@ in-repo at `docs/evidence/review-20261004/`.
 - **REVIEW phase**: drill PASSED in scope (CODE+REVIEW, 2026-10-03) — no
   general readiness claim. Author==reviewer defect CLOSED (2026-10-03/04):
   independence preflight blocks self-review at runtime; independent drills
-  run Asrock qwen2.5:14b via Ollama (:11434, intentional recorded route).
-  Residual accepted risk: all fleet models are Qwen-family, so
-  vendor/family independence is incomplete by construction.
+  ran Asrock qwen2.5:14b via Ollama (:11434, intentional recorded route).
+  2026-10-08: REVIEW adopted to gpt-oss:20b via supervised :11435 forward
+  (owner-approved, ledger 129) on seeded-defect evidence (24/32 over two
+  days vs 4/16). The all-Qwen-family residual risk is CLOSED for REVIEW
+  (OpenAI lineage); it remains for VERIFY (Qwen-family, shares family with
+  the author) until the parked Nemotron retarget lands.
 - **TEST phase**: real-phase status EARNED in drill scope (2026-10-04) —
   executes the target repo's suite; proven by reproducing the import
   defect into a gate_failed stop. NOT production readiness.
