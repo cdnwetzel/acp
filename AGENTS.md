@@ -116,6 +116,13 @@ REVIEW adopted to gpt-oss:20b on Asrock (owner-approved; supervised
 :11435 forward, launchd local.acp.forward-11435); VERIFY/Nemotron stays
 parked behind the C3 tunnel retarget.
 
+Endpoint topology rule (owner decision 2026-10-08): the repo manifest's
+`lan`-class entries are canonical — they reflect the declared HOME-fleet
+normal path. Off-LAN drills patch only the sandbox copy of
+`endpoints.json` to the supervised forwards (`:8004` T5810 labrouter,
+`:11435` Asrock Ollama). The repo manifest is never retargeted for a
+drill, and the MacBook launchd forwards are not the canonical path.
+
 ## Code style and design rules
 
 - Modules are small, single-purpose, with a one-line docstring stating intent.
