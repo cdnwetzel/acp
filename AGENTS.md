@@ -96,7 +96,7 @@ python3 -m pipeline.approvals <gate> approve|deny "reason"
 # gates: intake | plan | validate
 ```
 
-**Current test status (2026-10-08): 294 passed, 0 failed**
+**Current test status (2026-10-09): 302 passed, 0 failed**
 (`python3 -m pytest tests/ -q`). C6 (2026-10-03) landed hash-chaining;
 the 2026-10-04 repair program added the legacy-prefix seal (row 78),
 lifecycle identity, hash-bound approvals, strict gate parsers, envelope
@@ -115,6 +115,15 @@ lifecycle's procedure (repo ledger 125, sandbox seq 19). 2026-10-08:
 REVIEW adopted to gpt-oss:20b on Asrock (owner-approved; supervised
 :11435 forward, launchd local.acp.forward-11435); VERIFY/Nemotron stays
 parked behind the C3 tunnel retarget.
+
+2026-10-09: Rungs 1–3 completed in drill scope. Rung 4 exercised a
+hash-coherent, sandbox-only reviewer-recall challenge: REVIEW missed a real
+negative-baseline defect in `rates.py`, TEST passed its five seeded tests,
+VERIFY followed the green evidence, and Chris denied VALIDATE. The lifecycle
+ended `denied:validate` with no `done` event; see
+`docs/rung4-review-recall-20261009.md`. The next proposed Rung 5 is an
+operator-driven remediation loop; the runner does not automatically rewind
+REVIEW to PLAN/CODE.
 
 Endpoint topology rule (owner decision 2026-10-08): the repo manifest's
 `lan`-class entries are canonical — they reflect the declared HOME-fleet
@@ -413,7 +422,11 @@ in-repo at `docs/evidence/review-20261004/`.
   (owner-approved, ledger 129) on seeded-defect evidence (24/32 over two
   days vs 4/16). The all-Qwen-family residual risk is CLOSED for REVIEW
   (OpenAI lineage); it remains for VERIFY (Qwen-family, shares family with
-  the author) until the parked Nemotron retarget lands.
+  the author) until the parked Nemotron retarget lands. Rung 4 (2026-10-09)
+  then produced the first lifecycle-level reviewer-recall failure: the
+  reviewer missed a hash-coherent, test-invisible negative-baseline defect in
+  `rates.py`; human VALIDATE denied the lifecycle. This remains drill evidence
+  only and does not change the production-readiness boundary.
 - **TEST phase**: real-phase status EARNED in drill scope (2026-10-04) —
   executes the target repo's suite; proven by reproducing the import
   defect into a gate_failed stop. NOT production readiness.
