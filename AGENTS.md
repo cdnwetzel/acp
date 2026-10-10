@@ -533,13 +533,16 @@ in-repo at `docs/evidence/review-20261004/`.
   CODE's agentic `pxx run` path stays on the base ISOLATION_TOML — pxx
   refuses bare outside ask/plan.
 - **Bare-mode evidence-hardening follow-ups (Codex Phase-3 review,
-  2026-10-05 — carried, not closed)**: (P2) ACP reads pxx's audit event
-  without verifying pxx's audit hash chain + `.head` — receipts are
-  operational evidence, not yet production-grade; (P2) session extraction
-  scans all stdout instead of anchoring to the outcome line; (P2,
-  pre-existing) REVIEW/VERIFY lack an outer subprocess timeout. Required
-  follow-ups before payload receipts are treated as production-grade
-  evidence; none blocks the experimental Phase 4 measurement.
+  2026-10-05 — reconciled 2026-10-10, F-003)**: (P2) pxx audit hash-chain +
+  `.head` verification — RESOLVED `775cd85` (`_verify_pxx_audit`); (P2)
+  session extraction anchored to the outcome block — RESOLVED `775cd85`,
+  hardened `a5d137d` (`extract_pxx_session`); (P2) REVIEW/VERIFY outer
+  subprocess timeout — mechanism RESOLVED `775cd85`, policy unified
+  2026-10-10 (`a6b7e5c`, `b051846`: one named budget 600s + derived 60s
+  margin = 660s across all ask call sites, F-002). Remaining open
+  limitation: the audit fixture is synthetic — captured-real-audit
+  provenance is F-004, OPEN; receipts remain operational evidence, not yet
+  production-grade, until it closes.
 - **Mechanical pre-write checks pattern**: phases validate machine
   contracts BEFORE writing artifacts; gates re-check after. Instances:
   PLAN 1:1 criteria check (ghost-task class), VERIFY verbatim
