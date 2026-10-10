@@ -60,12 +60,18 @@ def prompt_hash(prompt):
     import hashlib
     return hashlib.sha256(prompt.encode()).hexdigest()
 
-def write_transcript(path, argv, prompt, r, iso_config=ISOLATION_TOML):
+def write_transcript(path, argv, prompt, r, iso_config=ISOLATION_TOML,
+                     budget_s=None, timeout_s=None):
     """Uniform worker transcript: the exact command, exit code, prompt hash,
-    the exact isolation config in force, and COMPLETE stdout+stderr."""
+    the exact isolation config in force, and COMPLETE stdout+stderr. When
+    budget_s/timeout_s are given, the derived timeout policy (F-002,
+    2026-10-10) is recorded on the success path too — not only on failure."""
+    policy = (f"[timeout policy: budget {budget_s}s + "
+              f"{PXX_TIMEOUT_MARGIN_SECONDS}s margin = outer kill {timeout_s}s]\n"
+              if timeout_s is not None else "")
     with open(path, "w") as f:
         f.write(f"$ {' '.join(argv)}\n[rc={r.returncode}]\n"
-                f"[prompt_sha256={prompt_hash(prompt)}]\n"
+                f"[prompt_sha256={prompt_hash(prompt)}]\n" + policy +
                 f"--- isolation config (pxx.toml as written) ---\n{iso_config}"
                 f"--- stdout ---\n{r.stdout}\n--- stderr ---\n{r.stderr}")
 
@@ -550,7 +556,8 @@ def run_ask(ep, prompt, transcript_path, budget_rounds="4",
     if r is None:  # spawn failure — no process existed, no transcript possible
         _record(" ".join(argv), -1, "", duration, failure_class)
         raise WorkerError(f"pxx {failure_class} — envelope record emitted")
-    write_transcript(transcript_path, argv, prompt, r, iso_config=ISOLATION_TOML_BARE)
+    write_transcript(transcript_path, argv, prompt, r, iso_config=ISOLATION_TOML_BARE,
+                     budget_s=budget_seconds, timeout_s=timeout)
     if r.returncode is None:  # timeout
         _record(" ".join(argv), -1, r.stdout, duration, failure_class)
         raise WorkerError(f"pxx {failure_class} — transcript {transcript_path}")

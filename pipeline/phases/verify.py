@@ -141,7 +141,9 @@ def _run_pxx(target_repo):
             os.remove(iso_path)
     duration = time.monotonic() - t0
     write_transcript("artifacts/verify.transcript.log", argv, prompt, r,
-                     iso_config=ISOLATION_TOML_BARE)
+                     iso_config=ISOLATION_TOML_BARE,
+                     budget_s=PXX_ASK_BUDGET_SECONDS,
+                     timeout_s=PXX_ASK_TIMEOUT_SECONDS)
     payload, evidence_failure = (bare_payload_evidence(r.stdout)
                                  if r.returncode == 0 else ({}, None))
     from pipeline import envelope

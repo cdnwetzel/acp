@@ -159,7 +159,9 @@ def _run_pxx(target_repo, reviewer=None):
                     f"{PXX_TIMEOUT_MARGIN_SECONDS}s margin)\n{stderr}")
             duration = time.monotonic() - t0
             tpath = f"artifacts/diff/{d['task']}.review.transcript.log"
-            write_transcript(tpath, argv, prompt, r, iso_config=ISOLATION_TOML_BARE)
+            write_transcript(tpath, argv, prompt, r, iso_config=ISOLATION_TOML_BARE,
+                             budget_s=PXX_ASK_BUDGET_SECONDS,
+                             timeout_s=PXX_ASK_TIMEOUT_SECONDS)
             payload, evidence_failure = (bare_payload_evidence(r.stdout)
                                          if r.returncode == 0 else ({}, None))
             from pipeline import envelope
