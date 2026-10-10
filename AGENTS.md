@@ -96,7 +96,7 @@ python3 -m pipeline.approvals <gate> approve|deny "reason"
 # gates: intake | plan | validate
 ```
 
-**Current test status (2026-10-09): 302 passed, 0 failed**
+**Current test status (2026-10-10): 304 passed, 0 failed**
 (`python3 -m pytest tests/ -q`). C6 (2026-10-03) landed hash-chaining;
 the 2026-10-04 repair program added the legacy-prefix seal (row 78),
 lifecycle identity, hash-bound approvals, strict gate parsers, envelope
