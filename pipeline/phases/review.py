@@ -14,7 +14,9 @@ from pipeline.worker import (ISOLATION_TOML_BARE, WorkerError,
                              classify_pxx_failure, git_boundary_snapshot,
                              pxx_bin, pxx_env, require_bare_capable,
                              scope_offenders, write_transcript,
-                             PXX_ASK_TIMEOUT_SECONDS)
+                             PXX_ASK_BUDGET_SECONDS,
+                             PXX_ASK_TIMEOUT_SECONDS,
+                             PXX_TIMEOUT_MARGIN_SECONDS)
 
 PHASE = "review"
 
@@ -133,7 +135,8 @@ def _run_pxx(target_repo, reviewer=None):
             argv = [binary, "ask", "-m", prompt,
                     "--model", ep["model"], "--base-url", ep["endpoint"],
                     "--provider", ep.get("provider", "vllm"),
-                    "--budget-rounds", "6", "--budget-seconds", "600",
+                    "--budget-rounds", "6",
+                    "--budget-seconds", str(PXX_ASK_BUDGET_SECONDS),
                     "--no-memory", "--sandbox"]
             t0 = time.monotonic()
             timed_out = False
@@ -151,7 +154,9 @@ def _run_pxx(target_repo, reviewer=None):
                     stderr = stderr.decode(errors="replace")
                 r = subprocess.CompletedProcess(
                     argv, -1, stdout,
-                    f"timeout after {PXX_ASK_TIMEOUT_SECONDS}s\n{stderr}")
+                    f"timeout after {PXX_ASK_TIMEOUT_SECONDS}s "
+                    f"(budget {PXX_ASK_BUDGET_SECONDS}s + "
+                    f"{PXX_TIMEOUT_MARGIN_SECONDS}s margin)\n{stderr}")
             duration = time.monotonic() - t0
             tpath = f"artifacts/diff/{d['task']}.review.transcript.log"
             write_transcript(tpath, argv, prompt, r, iso_config=ISOLATION_TOML_BARE)
@@ -162,7 +167,7 @@ def _run_pxx(target_repo, reviewer=None):
                 phase="review", task_id=d["task"], planned="pxx:ask",
                 invoked="pxx:ask", command=" ".join(argv),
                 exit_status=r.returncode, duration_s=duration,
-                budgets={"rounds": "6", "seconds": "600"},
+                budgets={"rounds": "6", "seconds": str(PXX_ASK_BUDGET_SECONDS)},
                 model=ep["model"], provider=ep.get("provider", "vllm"),
                 endpoint=ep["endpoint"], prompt=prompt, output=r.stdout,
                 artifacts={tpath: tpath, d["path"]: d["path"]},
@@ -173,8 +178,9 @@ def _run_pxx(target_repo, reviewer=None):
                 **payload)
             if timed_out:
                 raise WorkerError(
-                    f"pxx REVIEW timed out after {PXX_ASK_TIMEOUT_SECONDS}s — "
-                    f"see {tpath}")
+                    f"pxx REVIEW timed out after {PXX_ASK_TIMEOUT_SECONDS}s "
+                    f"(budget {PXX_ASK_BUDGET_SECONDS}s + "
+                    f"{PXX_TIMEOUT_MARGIN_SECONDS}s margin) — see {tpath}")
             if r.returncode != 0:
                 raise classify_pxx_failure(prompt, r, tpath)
             if evidence_failure:  # observed payload was NOT bare — evidence failure

@@ -125,6 +125,16 @@ ended `denied:validate` with no `done` event; see
 operator-driven remediation loop; the runner does not automatically rewind
 REVIEW to PLAN/CODE.
 
+2026-10-10: F-001 owner decision (ledger row 140) — the VERIFY prompt is the
+COMBINED revision: the row-100 (`bbe19e8`) pipe/verbatim clauses restored
+verbatim plus the retained anti-echo instruction from `a5d137d` (option 3 of
+`docs/remediation-plan-f001-f004-20261009.md`; old/row-100/new prompt SHA-256
+recorded in the ledger row). F-002 landed with it: one named timeout policy
+for every pxx ask call site — inner budget `PXX_ASK_BUDGET_SECONDS = 600`
+plus `PXX_TIMEOUT_MARGIN_SECONDS = 60`; the outer subprocess kill is derived
+(660s), never an independent literal, and REVIEW/VERIFY timeout errors and
+transcripts report both values. Suite: 304 passed.
+
 Endpoint topology rule (owner decision 2026-10-08): the repo manifest's
 `lan`-class entries are canonical — they reflect the declared HOME-fleet
 normal path. Off-LAN drills patch only the sandbox copy of

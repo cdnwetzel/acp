@@ -14,7 +14,8 @@ from pipeline.worker import (ISOLATION_TOML_BARE, WorkerError,
                              bare_payload_evidence, check_access,
                              classify_pxx_failure, git_boundary_snapshot,
                              pxx_bin, pxx_env, require_bare_capable,
-                             write_transcript, PXX_ASK_TIMEOUT_SECONDS)
+                             write_transcript, PXX_ASK_BUDGET_SECONDS,
+                             PXX_ASK_TIMEOUT_SECONDS, PXX_TIMEOUT_MARGIN_SECONDS)
 
 PHASE = "verify"
 
@@ -86,19 +87,28 @@ def _run_pxx(target_repo):
         "Return only the document below. Never repeat these instructions.\n"
         "# verification.md\n\n"
         "| acceptance criterion | evidence | verdict |\n|---|---|---|\n"
-        "Then output exactly one pipe-delimited data row for each criterion. "
-        "Each row must start and end with `|`; do not output any prose between "
-        "the separator and the first data row. The first cell must contain the "
-        "criterion text below byte-for-byte, without decoration. The other "
-        "cells must contain the evidence and exactly PASS or FAIL with its "
-        "reason. After the rows, output a non-empty `## Limitations` section. "
+        "Every table data row MUST begin with `|` and end with `|`. There "
+        "must be exactly one pipe-delimited data row per acceptance criterion "
+        "— a row whose first character is not `|` is invalid, and a row "
+        "missing its trailing `|` is invalid.\n"
+        "The FIRST cell of each data row contains ONLY the original "
+        "criterion text VERBATIM — BYTE-FOR-BYTE as it appears below, with the "
+        "exact original characters (never a paraphrase, never a unicode escape "
+        "sequence like \\u2014 in place of the character itself). NO markdown "
+        "emphasis or decoration in that cell — no **bold**, no `backticks`, no "
+        "labels, no bullets, nothing added or removed. Other cells may use "
+        "normal markdown. Verdict PASS "
+        "or FAIL with the specific evidence relied on; then a '## Limitations' "
+        "section stating honestly what this evidence does NOT prove "
+        "(non-empty, specific — never perfunctory).\n"
         "Do not output these rules or any other text.\n"
         "--- ACCEPTANCE CRITERIA ---\n" + "\n".join(f"- {a}" for a in acs) +
         "\n--- EVIDENCE ---\n" + evidence + "\n--- END EVIDENCE ---")
     argv = [binary, "ask", "-m", prompt,
             "--model", ep["model"], "--base-url", ep["endpoint"],
             "--provider", ep.get("provider", "ollama"),
-            "--budget-rounds", "4", "--budget-seconds", "600",
+            "--budget-rounds", "4",
+            "--budget-seconds", str(PXX_ASK_BUDGET_SECONDS),
             "--no-memory", "--sandbox"]
     try:
         if iso_path:  # pxx stashes repo-local config per invocation (+stash):
@@ -120,7 +130,9 @@ def _run_pxx(target_repo):
                 stderr = stderr.decode(errors="replace")
             r = subprocess.CompletedProcess(
                 argv, -1, stdout,
-                f"timeout after {PXX_ASK_TIMEOUT_SECONDS}s\n{stderr}")
+                f"timeout after {PXX_ASK_TIMEOUT_SECONDS}s "
+                f"(budget {PXX_ASK_BUDGET_SECONDS}s + "
+                f"{PXX_TIMEOUT_MARGIN_SECONDS}s margin)\n{stderr}")
     finally:
         if iso_original is not None:
             with open(iso_path, "wb") as f:  # ADV-017: restore, never delete
@@ -136,7 +148,8 @@ def _run_pxx(target_repo):
     envelope.emit_worker_call(
         phase="verify", planned="pxx:ask", invoked="pxx:ask",
         command=" ".join(argv), exit_status=r.returncode,
-        duration_s=duration, budgets={"rounds": "4", "seconds": "600"},
+        duration_s=duration, budgets={"rounds": "4",
+                                      "seconds": str(PXX_ASK_BUDGET_SECONDS)},
         model=ep["model"], provider=ep.get("provider", "ollama"),
         endpoint=ep["endpoint"], prompt=prompt, inputs=evidence,
         output=r.stdout,
@@ -148,7 +161,9 @@ def _run_pxx(target_repo):
         **payload)
     if timed_out:
         raise WorkerError(
-            f"pxx VERIFY timed out after {PXX_ASK_TIMEOUT_SECONDS}s — see "
+            f"pxx VERIFY timed out after {PXX_ASK_TIMEOUT_SECONDS}s "
+            f"(budget {PXX_ASK_BUDGET_SECONDS}s + "
+            f"{PXX_TIMEOUT_MARGIN_SECONDS}s margin) — see "
             f"artifacts/verify.transcript.log")
     if r.returncode != 0:
         raise classify_pxx_failure(prompt, r, "artifacts/verify.transcript.log")

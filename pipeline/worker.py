@@ -141,7 +141,12 @@ def pxx_bin():
     raise WorkerError("pxx binary not found (checked PATH, ~/miniforge3/bin, ~/.local/bin)")
 
 BARE_MIN_VERSION = (2, 6, 2)  # pxx 7360533: Settings.bare + session= outcome line
-PXX_ASK_TIMEOUT_SECONDS = 120
+# One named timeout policy for every pxx ask call site (owner F-002,
+# 2026-10-10): the inner pxx budget plus an explicit cleanup/transport
+# margin. The outer subprocess kill is DERIVED — never an independent literal.
+PXX_ASK_BUDGET_SECONDS = 600
+PXX_TIMEOUT_MARGIN_SECONDS = 60
+PXX_ASK_TIMEOUT_SECONDS = PXX_ASK_BUDGET_SECONDS + PXX_TIMEOUT_MARGIN_SECONDS
 
 def require_bare_capable(binary):
     """Fail-loud feature detection for bare mode: probe `<binary> --version`
@@ -469,7 +474,8 @@ def extract_one_json(stdout):
             f"{len(objs)} — refusing to guess or repair")
     return objs[0]
 
-def run_ask(ep, prompt, transcript_path, budget_rounds="4", budget_seconds="600",
+def run_ask(ep, prompt, transcript_path, budget_rounds="4",
+            budget_seconds=str(PXX_ASK_BUDGET_SECONDS),
             cwd=None, phase=None, task_id=None):
     """One-shot governed `pxx ask` (no edit tools) in BARE mode (pxx >= 2.6.2,
     enforced by require_bare_capable — no scaffolded fallback): isolation
@@ -485,12 +491,12 @@ def run_ask(ep, prompt, transcript_path, budget_rounds="4", budget_seconds="600"
     Emits exactly one mandatory envelope record per invocation (every exit
     path — a failed call is evidence too).
     Failure classes are distinguished and recorded (ADV-018, 2026-10-04):
-    spawn failure (OSError, message preserved), timeout (budget + 60s slack,
+    spawn failure (OSError, message preserved), timeout (budget + margin slack,
     partial output preserved, transcript rc=None), signal termination
     (negative returncode, named signal), nonzero exit (classified)."""
     import time
     from pipeline import envelope
-    timeout = int(budget_seconds) + 60
+    timeout = int(budget_seconds) + PXX_TIMEOUT_MARGIN_SECONDS
     budgets = {"rounds": budget_rounds, "seconds": budget_seconds}
 
     def _record(argv_text, rc, out, duration, failure_class, payload=None):

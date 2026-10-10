@@ -69,3 +69,48 @@ def test_context_excludes_non_dependency_diffs(tmp_path, monkeypatch):
     ctx = review._build_review_context(manifest["diffs"][2], plan, manifest)
     assert "diff aaa" in ctx       # dependency diff included
     assert "diff bbb" not in ctx   # unrelated task's diff stays out (minimal context)
+
+
+def test_review_timeout_reports_derived_policy(tmp_path, monkeypatch):
+    """F-002 (owner, 2026-10-10): REVIEW shares the same derived policy as
+    run_ask/VERIFY — outer kill 660s (budget 600s + 60s margin), WorkerError
+    names both values, fail-closed before any verdict parsing."""
+    import subprocess
+    from pipeline.worker import (PXX_ASK_BUDGET_SECONDS,
+                                 PXX_ASK_TIMEOUT_SECONDS,
+                                 PXX_TIMEOUT_MARGIN_SECONDS)
+    assert PXX_ASK_TIMEOUT_SECONDS == (PXX_ASK_BUDGET_SECONDS +
+                                       PXX_TIMEOUT_MARGIN_SECONDS)
+    monkeypatch.chdir(tmp_path)
+    os.makedirs("artifacts/diff")
+    json.dump({"acceptance_criteria": ["AC-1: x"]},
+              open("artifacts/intake.json", "w"))
+    json.dump({"tasks": [{"id": "TASK-1", "scope": ["a.py"], "deps": []}]},
+              open("artifacts/plan.json", "w"))
+    open("artifacts/diff/TASK-1.patch", "w").write("diff --git a/a.py b/a.py\n")
+    json.dump({"diffs": [{"task": "TASK-1",
+                          "path": "artifacts/diff/TASK-1.patch",
+                          "scope": ["a.py"], "criterion": "AC-1: x"}]},
+              open("artifacts/diff/manifest.json", "w"))
+    monkeypatch.setattr(review, "pxx_bin", lambda: "/fake/pxx")
+    seen = {}
+    def slow(argv, **kw):
+        if "--version" in argv:
+            return subprocess.CompletedProcess(argv, 0, "pxx 2.6.2\n", "")
+        seen["timeout"] = kw.get("timeout")
+        raise subprocess.TimeoutExpired(argv, kw.get("timeout"),
+                                        output=b"", stderr=b"")
+    monkeypatch.setattr(review.subprocess, "run", slow)
+    monkeypatch.setattr(review, "_assert_independence", lambda *a, **kw: None)
+    monkeypatch.setattr(review, "check_access", lambda ep: None)
+    import pipeline.endpoints as endpoints
+    monkeypatch.setattr(endpoints, "resolve", lambda phase:
+                        {"model": "m", "endpoint": "http://x",
+                         "provider": "vllm"})
+    with pytest.raises(review.WorkerError, match="timed out after 660s "
+                                                 "\\(budget 600s \\+ 60s margin\\)"):
+        review.run(worker="pxx")
+    assert seen["timeout"] == PXX_ASK_TIMEOUT_SECONDS == 660
+    assert not os.path.exists("artifacts/review.md")  # fail-closed
+    t = open("artifacts/diff/TASK-1.review.transcript.log").read()
+    assert "budget 600s + 60s margin" in t

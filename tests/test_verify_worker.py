@@ -170,8 +170,10 @@ def test_run_pxx_refuses_pipeless_data_rows_before_write(tmp_path, monkeypatch):
     assert not os.path.exists("artifacts/verification.md")  # no partial artifact
 
 def test_prompt_demands_pipe_delimited_rows(tmp_path, monkeypatch):
-    """The prompt IS the contract (owner, 2026-10-06): the explicit pipe
-    rules must be present in what the worker actually sends."""
+    """The prompt IS the contract (owner, 2026-10-06; combined revision
+    approved 2026-10-10, F-001 option 3): the row-100 pipe/verbatim clauses
+    AND the retained anti-echo instruction must be present in what the
+    worker actually sends."""
     monkeypatch.chdir(tmp_path)
     os.makedirs("artifacts/diff")
     json.dump({"acceptance_criteria": [AC]}, open("artifacts/intake.json", "w"))
@@ -192,9 +194,17 @@ def test_prompt_demands_pipe_delimited_rows(tmp_path, monkeypatch):
     monkeypatch.setattr(verify.subprocess, "run", capturing)
     verify.run(worker="pxx")
     prompt = next(a for argv in sent for i, a in enumerate(argv) if i and argv[i - 1] == "-m")
-    assert "Each row must start and end with `|`" in prompt
-    assert "exactly one pipe-delimited data row for each criterion" in prompt
-    assert "do not output any prose between" in prompt
+    # row-100 clauses (restored verbatim, F-001 option 3)
+    assert "Every table data row MUST begin with `|` and end with `|`" in prompt
+    assert "a row whose first character is not `|` is invalid" in prompt
+    assert "missing its trailing `|` is invalid" in prompt
+    assert "BYTE-FOR-BYTE" in prompt
+    assert "unicode escape sequence like \\u2014" in prompt
+    assert "no **bold**, no `backticks`, no " in prompt
+    assert "never perfunctory" in prompt
+    # retained anti-echo instruction
+    assert "Never repeat these instructions" in prompt
+    assert "Do not output these rules or any other text" in prompt
 
 EP = {"model": "qwen2.5:14b-instruct-q4_k_m", "endpoint": "http://10.0.1.115:11434",
       "provider": "ollama", "worker": "asrock-verifier"}
@@ -279,3 +289,41 @@ def test_header_does_not_distort_gate(tmp_path, monkeypatch):
     open("artifacts/verification.md", "w").write(verify._provenance_header(EP) + doc)
     from pipeline import gates
     assert gates.gate_verify() is True
+
+
+def test_run_pxx_timeout_reports_derived_policy(tmp_path, monkeypatch):
+    """F-002 (owner, 2026-10-10): the outer kill is DERIVED from the one named
+    policy — budget 600s + 60s margin = 660s — not an independent literal.
+    Fail-closed: WorkerError names both values, no partial artifact."""
+    import subprocess
+    from pipeline.worker import (PXX_ASK_BUDGET_SECONDS,
+                                 PXX_ASK_TIMEOUT_SECONDS,
+                                 PXX_TIMEOUT_MARGIN_SECONDS)
+    assert PXX_ASK_TIMEOUT_SECONDS == (PXX_ASK_BUDGET_SECONDS +
+                                       PXX_TIMEOUT_MARGIN_SECONDS)
+    monkeypatch.chdir(tmp_path)
+    os.makedirs("artifacts/diff")
+    json.dump({"acceptance_criteria": [AC]}, open("artifacts/intake.json", "w"))
+    open("artifacts/test.log", "w").write("COMMAND: pytest\nEXIT_CODE: 0\nDURATION_S: 1\n1 passed\n")
+    json.dump({"diffs": []}, open("artifacts/diff/manifest.json", "w"))
+    open("artifacts/review.md", "w").write("# review.md\n")
+    monkeypatch.setattr(verify, "pxx_bin", lambda: "/fake/pxx")
+    seen = {}
+    def slow(argv, **kw):
+        if "--version" in argv:
+            return subprocess.CompletedProcess(argv, 0, "pxx 2.6.2\n", "")
+        seen["timeout"] = kw.get("timeout")
+        raise subprocess.TimeoutExpired(argv, kw.get("timeout"),
+                                        output=b"partial", stderr=b"slow")
+    monkeypatch.setattr(verify.subprocess, "run", slow)
+    monkeypatch.setattr(verify, "assert_independence", lambda *a, **kw: None)
+    monkeypatch.setattr(verify, "check_access", lambda ep: None)
+    import pipeline.endpoints as endpoints
+    monkeypatch.setattr(endpoints, "resolve", lambda phase: EP)
+    with pytest.raises(WorkerError, match="timed out after 660s "
+                                          "\\(budget 600s \\+ 60s margin\\)"):
+        verify.run(worker="pxx")
+    assert seen["timeout"] == PXX_ASK_TIMEOUT_SECONDS == 660
+    assert not os.path.exists("artifacts/verification.md")  # fail-closed
+    t = open("artifacts/verify.transcript.log").read()
+    assert "budget 600s + 60s margin" in t and "partial" in t
