@@ -133,7 +133,18 @@ recorded in the ledger row). F-002 landed with it: one named timeout policy
 for every pxx ask call site — inner budget `PXX_ASK_BUDGET_SECONDS = 600`
 plus `PXX_TIMEOUT_MARGIN_SECONDS = 60`; the outer subprocess kill is derived
 (660s), never an independent literal, and REVIEW/VERIFY timeout errors and
-transcripts report both values. Suite: 304 passed.
+transcripts report both values (including a `[timeout policy]` header line on
+the success path, `b051846`). Suite: 304 passed.
+
+F-001 REMAINS OPEN (owner ruling 2026-10-10, ledger row 141): the fresh
+VERIFY drill (`/tmp/acp-f001-verify-drill-20261010`) failed CLOSED — the
+model emitted a pipeless leading edge on the data row (the 2026-10-06 stop
+class, reproduced at temperature 0.0 under the combined prompt) and the
+pre-write verbatim-traceability check refused to write the artifact. The
+machinery is proven; model conformance is not. Prompt-layer repair has now
+failed this class across two prompt revisions and two temperatures; the next
+evaluation is provider-level structured output (schema-constrained decoding)
+for VERIFY. No drill retry without an explicit owner decision.
 
 Endpoint topology rule (owner decision 2026-10-08): the repo manifest's
 `lan`-class entries are canonical — they reflect the declared HOME-fleet
