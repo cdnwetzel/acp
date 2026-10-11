@@ -73,6 +73,8 @@ def test_untraced_criteria_catches_paraphrase():
     f"`{AC}`",              # backtick-wrapped
     f"Criterion: {AC}",     # prefixed label
     AC.replace("—", "\\u2014"),  # unicode escape instead of the character
+    f"- {AC}",              # bullet prefix copied from the prompt's criteria
+                            # list (structured-drill stop, 2026-10-10)
 ])
 def test_untraced_criteria_catches_cell_decoration(decorated):
     """Decoration around a verbatim quote is still a contract violation —
@@ -224,6 +226,11 @@ def test_prompt_demands_structured_json(tmp_path, monkeypatch):
     assert "never perfunctory" in prompt
     # retained anti-echo instruction
     assert "Never repeat these instructions" in prompt
+    # criteria presented WITHOUT bullet prefixes (structured-drill stop
+    # 2026-10-10: the model faithfully copied the "- " bullet into the
+    # criterion field — a presentation defect, fixed by plain presentation)
+    assert "NO bullet, numbering, or other prefix" in prompt
+    assert f"\n- {AC}" not in prompt
     # the markdown-table contract is GONE — the schema carries the structure
     assert "MUST begin with `|`" not in prompt
     # the schema is delivered as the canonical versioned file

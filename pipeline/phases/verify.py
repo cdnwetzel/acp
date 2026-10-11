@@ -177,7 +177,10 @@ def _run_pxx(target_repo):
         "the specific evidence relied on; \"verdict\" is exactly PASS or "
         "FAIL. \"limitations\" is a non-empty list stating honestly what "
         "this evidence does NOT prove (specific — never perfunctory).\n"
-        "--- ACCEPTANCE CRITERIA ---\n" + "\n".join(f"- {a}" for a in acs) +
+        "Each criterion below is the complete text — one per line, with NO "
+        "bullet, numbering, or other prefix; the criterion field must "
+        "contain exactly that text and nothing more.\n"
+        "--- ACCEPTANCE CRITERIA ---\n" + "\n".join(acs) +
         "\n--- EVIDENCE ---\n" + evidence + "\n--- END EVIDENCE ---")
     argv = [binary, "ask", "-m", prompt,
             "--model", ep["model"], "--base-url", ep["endpoint"],
