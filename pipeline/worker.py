@@ -154,34 +154,47 @@ PXX_ASK_BUDGET_SECONDS = 600
 PXX_TIMEOUT_MARGIN_SECONDS = 60
 PXX_ASK_TIMEOUT_SECONDS = PXX_ASK_BUDGET_SECONDS + PXX_TIMEOUT_MARGIN_SECONDS
 
-def require_bare_capable(binary):
-    """Fail-loud feature detection for bare mode: probe `<binary> --version`
-    and require pxx >= 2.6.2 (the version that adds Settings.bare, the
-    session= outcome field, and the payload-shape audit stamps). Unparsable
-    output, nonzero exit, timeout, spawn failure, or an older version all
-    raise WorkerError with the exact command output — there is NO fallback
-    to scaffolded mode."""
+BARE_MIN_VERSION = (2, 6, 2)  # pxx 7360533: Settings.bare + session= outcome line
+STRUCTURED_MIN_VERSION = (2, 7, 0)  # pxx 7e499bd: Settings.response_format
+
+def _require_pxx_version(binary, minimum, feature):
+    """Fail-loud feature detection: probe `<binary> --version` and require
+    pxx >= minimum. Unparsable output, nonzero exit, timeout, spawn failure,
+    or an older version all raise WorkerError with the exact command output
+    — there is NO fallback to a lesser mode."""
     try:
         r = subprocess.run([binary, "--version"], capture_output=True,
                            text=True, timeout=10)
     except subprocess.TimeoutExpired:
         raise WorkerError(f"`{binary} --version` timed out after 10s — cannot "
-                          f"prove bare-mode capability (pxx >= 2.6.2); no fallback")
+                          f"prove {feature} capability (pxx >= "
+                          f"{'.'.join(map(str, minimum))}); no fallback")
     except OSError as e:
         raise WorkerError(f"`{binary} --version` spawn failure: {e} — cannot "
-                          f"prove bare-mode capability (pxx >= 2.6.2); no fallback")
+                          f"prove {feature} capability (pxx >= "
+                          f"{'.'.join(map(str, minimum))}); no fallback")
     m = re.search(r"pxx (\d+)\.(\d+)\.(\d+)", r.stdout or "")
     if r.returncode != 0 or not m:
         raise WorkerError(
             f"`{binary} --version` did not report a parseable pxx version "
-            f"(rc={r.returncode}) — cannot prove bare-mode capability; no "
+            f"(rc={r.returncode}) — cannot prove {feature} capability; no "
             f"fallback.\nstdout: {r.stdout!r}\nstderr: {r.stderr!r}")
     found = tuple(int(g) for g in m.groups())
-    if found < BARE_MIN_VERSION:
+    if found < minimum:
         raise WorkerError(
             f"pxx {'.'.join(map(str, found))} < "
-            f"{'.'.join(map(str, BARE_MIN_VERSION))} — bare mode (pxx 7360533) "
-            f"requires >= 2.6.2; upgrade pxx, no fallback to scaffolded mode")
+            f"{'.'.join(map(str, minimum))} — {feature} requires >= "
+            f"{'.'.join(map(str, minimum))}; upgrade pxx, no fallback")
+
+def require_bare_capable(binary):
+    """Bare mode needs pxx >= 2.6.2 (Settings.bare, the session= outcome
+    field, and the payload-shape audit stamps) — no scaffolded fallback."""
+    _require_pxx_version(binary, BARE_MIN_VERSION, "bare-mode")
+
+def require_structured_capable(binary):
+    """Structured VERIFY needs pxx >= 2.7.0 (Settings.response_format + the
+    response-format audit stamps) — no markdown fallback (owner 2026-10-10)."""
+    _require_pxx_version(binary, STRUCTURED_MIN_VERSION, "structured-output")
 
 def extract_pxx_session(stdout):
     """Extract pxx's session from a recognized outcome block only.
@@ -245,14 +258,21 @@ def payload_receipt(session_id, state_dir=None):
                     and ev.get("session_id") == session_id):
                 data = ev.get("data") or {}
                 try:
-                    return {k: data[k] for k in ("payload_mode",
-                                                 "system_message_present",
-                                                 "tools_key_present", "tool_count")}
+                    out = {k: data[k] for k in ("payload_mode",
+                                                "system_message_present",
+                                                "tools_key_present", "tool_count")}
                 except KeyError as e:
                     raise WorkerError(
                         f"prompt_rendered event for pxx session {session_id} "
                         f"lacks the {e} field — written by pxx < 2.6.2 or "
                         f"schema drift; cannot evidence the payload shape") from e
+                # Structured-output stamps (pxx >= 2.7.0): .get() — absent on
+                # older pxx. Callers that REQUIRE them pass
+                # expect_response_format to bare_payload_evidence.
+                out.update({k: data.get(k) for k in (
+                    "response_format_present", "response_format_sha256",
+                    "json_schema_name")})
+                return out
     raise WorkerError(
         f"no prompt_rendered audit event for pxx session {session_id} under "
         f"{state_dir}/audit (today/yesterday local dates) — cannot evidence "
@@ -286,13 +306,17 @@ def _verify_pxx_audit(path):
             f"pxx audit verification failed for {path}: {e} — cannot accept "
             f"the payload receipt as evidence") from e
 
-def bare_payload_evidence(stdout):
+def bare_payload_evidence(stdout, expect_response_format=None):
     """Receipt bundle for a bare-mode ask/plan invocation. Returns
     (fields, failure): fields for the envelope record (pxx_session_id,
     payload_mode_expected='bare', and on success the four observed fields);
     failure is an EVIDENCE-failure message or None. The model's output may be
     fine — a missing session id, a missing audit event, or an observed
-    non-bare payload means the run is not bare-mode evidence."""
+    non-bare payload means the run is not bare-mode evidence.
+    expect_response_format (canonical schema sha256, pxx >= 2.7.0): when set,
+    the observed request must ALSO carry response_format_present=true and a
+    matching schema hash — config said structured is not evidence the request
+    WAS structured (owner 2026-10-10, F-001 structured VERIFY)."""
     fields = {"payload_mode_expected": "bare"}
     session_id = extract_pxx_session(stdout)
     if session_id is None:
@@ -310,6 +334,20 @@ def bare_payload_evidence(stdout):
                         f"{fields['payload_mode']!r} (session {session_id}) — "
                         f"config said bare, the audit stream says otherwise; "
                         f"not a model failure")
+    if expect_response_format is not None:
+        if fields.get("response_format_present") is not True:
+            return fields, (f"PAYLOAD EVIDENCE FAILURE: intended structured "
+                            f"output (schema {expect_response_format[:16]}…) but "
+                            f"the observed request has response_format_present="
+                            f"{fields.get('response_format_present')!r} (session "
+                            f"{session_id}) — pxx < 2.7.0 or config drift; not a "
+                            f"model failure")
+        if fields.get("response_format_sha256") != expect_response_format:
+            return fields, (f"PAYLOAD EVIDENCE FAILURE: observed schema sha256 "
+                            f"{fields.get('response_format_sha256')!r} != "
+                            f"expected {expect_response_format!r} (session "
+                            f"{session_id}) — the request did not carry the "
+                            f"canonical schema; not a model failure")
     return fields, None
 
 def default_payload_evidence(stdout):

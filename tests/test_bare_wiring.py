@@ -166,10 +166,16 @@ def test_payload_receipt_reads_bare_and_default_sessions(tmp_path):
                 audit / f"{datetime.date.today().isoformat()}.head")
     bare = w.payload_receipt(BARE_SESSION, str(state_dir / "pxx"))
     assert bare == {"payload_mode": "bare", "system_message_present": False,
-                    "tools_key_present": False, "tool_count": 0}
+                    "tools_key_present": False, "tool_count": 0,
+                    # structured-output stamps (pxx >= 2.7.0): None here —
+                    # the 2.6.x-era fixture lacks them; optional by design
+                    "response_format_present": None,
+                    "response_format_sha256": None, "json_schema_name": None}
     default = w.payload_receipt(DEFAULT_SESSION, str(state_dir / "pxx"))
     assert default == {"payload_mode": "default", "system_message_present": True,
-                       "tools_key_present": True, "tool_count": 9}
+                       "tools_key_present": True, "tool_count": 9,
+                       "response_format_present": None,
+                       "response_format_sha256": None, "json_schema_name": None}
 
 def test_payload_receipt_unknown_session_fails_loud(tmp_path, monkeypatch):
     state_dir = _fake_audit(tmp_path, monkeypatch)

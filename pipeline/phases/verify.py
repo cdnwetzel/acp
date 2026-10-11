@@ -4,20 +4,41 @@ Real path (worker="pxx", owner-authorized drill scope): read-only by
 construction — `pxx ask` (no edit tools). Input contract is ONLY the intake
 acceptance criteria, artifacts/test.log, the diff manifest, and review.md;
 the model never sees pipeline state and the phase writes nothing but
-artifacts/verification.md. Output contract is gate-enforced: every
-acceptance criterion traced to a PASS verdict, no FAIL rows, and a
-non-empty ## Limitations section (evidence must state its own limits).
+artifacts/verification.md. Output contract (2026-10-10, F-001): STRUCTURED
+output — provider-enforced JSON-schema decoding via pxx --response-format
+(pxx >= 2.7.0, no markdown fallback). ACP re-validates the parsed JSON
+(strict shape, PASS/FAIL enum, non-empty limitations, byte-exact criterion
+fields) BEFORE writing, then renders the existing markdown verification.md
+deterministically — gate_verify, the provenance header, and the human
+artifact are unchanged.
 """
 import json, os, re, subprocess, time
 from pipeline.worker import (ISOLATION_TOML_BARE, WorkerError,
                              assert_independence, assert_read_only,
                              bare_payload_evidence, check_access,
                              classify_pxx_failure, git_boundary_snapshot,
-                             pxx_bin, pxx_env, require_bare_capable,
+                             pxx_bin, pxx_env, require_structured_capable,
                              write_transcript, PXX_ASK_BUDGET_SECONDS,
                              PXX_ASK_TIMEOUT_SECONDS, PXX_TIMEOUT_MARGIN_SECONDS)
 
 PHASE = "verify"
+
+REPO_ROOT = os.path.dirname(os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__))))
+SCHEMA_PATH = os.path.join(REPO_ROOT, "contracts", "verification.schema.json")
+
+def _verification_schema():
+    """The canonical, versioned VERIFY output contract."""
+    return json.load(open(SCHEMA_PATH))
+
+def _schema_sha256(schema):
+    """Canonical schema hash — the exact convention pxx stamps into its
+    audit receipt (sorted keys, tight separators), so intended-vs-observed
+    compares byte-identically."""
+    import hashlib
+    return hashlib.sha256(
+        json.dumps(schema, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
 
 def run(mock=False, worker=None, target_repo=None):
     if worker == "pxx":
@@ -36,16 +57,75 @@ def run(mock=False, worker=None, target_repo=None):
         f.write("\n".join(lines) + "\n")
     return "artifacts/verification.md"
 
-def _untraced_criteria(doc, acs):
-    """Criteria not traced by an EXACT first-cell match in the document's
-    verdict table (shares gates.verdict_rows with the post-write gate — owner
-    ruling 2026-10-04: one parser, one semantics). Failure classes: the
-    run-10 literal \\u2014 escape corruption, and the requalification bold-
-    wrapped criterion (`**AC-1: …**`) — decoration around a verbatim quote is
-    still a contract violation, caught BEFORE the artifact is written."""
-    from pipeline.gates import verdict_rows
-    traced = {cells[0] for cells in verdict_rows(doc)}
+def _extract_json(stdout):
+    """The structured VERIFY object from pxx stdout: strip a leading outcome
+    prefix, then raw_decode the first complete JSON object (the trailing pxx
+    status trailer is ignored by construction). None if absent/unparseable."""
+    s = stdout.lstrip()
+    for prefix in ("[COMPLETED]", "[OUTCOME]", "[DONE]"):
+        if s.startswith(prefix):
+            s = s[len(prefix):].lstrip()
+    start = s.find("{")
+    if start == -1:
+        return None
+    try:
+        obj, _ = json.JSONDecoder().raw_decode(s[start:])
+    except ValueError:
+        return None
+    return obj if isinstance(obj, dict) else None
+
+def _validate_verification(obj):
+    """Strict shape re-check of the structured VERIFY object — the provider
+    enforced the schema on the wire, but ACP re-verifies (config said so is
+    not evidence). Returns an error string or None."""
+    if set(obj) != {"rows", "limitations"}:
+        return f"top-level keys {sorted(obj)} != exactly rows+limitations"
+    rows, lims = obj["rows"], obj["limitations"]
+    if not isinstance(rows, list) or not rows:
+        return "rows must be a non-empty array"
+    for i, row in enumerate(rows):
+        if not isinstance(row, dict) or set(row) != {"criterion", "evidence", "verdict"}:
+            return f"row {i}: keys must be exactly criterion/evidence/verdict"
+        if not all(isinstance(row[k], str) and row[k].strip()
+                   for k in ("criterion", "evidence", "verdict")):
+            return f"row {i}: criterion/evidence/verdict must be non-empty strings"
+        if row["verdict"] not in ("PASS", "FAIL"):
+            return f"row {i}: verdict {row['verdict']!r} is not PASS or FAIL"
+    if (not isinstance(lims, list) or not lims
+            or not all(isinstance(x, str) and x.strip() for x in lims)):
+        return "limitations must be a non-empty array of non-empty strings"
+    return None
+
+def _untraced_criteria(obj, acs):
+    """Criteria not traced by an EXACT byte-for-byte criterion field in the
+    structured VERIFY rows. Same enforcement semantics as the markdown era
+    (owner ruling 2026-10-04): the run-10 literal \\u2014 escape corruption
+    and the requalification bold-wrapped criterion classes — inside a JSON
+    string they are still contract violations, caught BEFORE the artifact
+    is written."""
+    traced = {row["criterion"] for row in obj["rows"]}
     return [a for a in acs if a not in traced]
+
+def _render_markdown(obj):
+    """Deterministic machine rendering of the validated JSON into the
+    existing verification.md shape — gate_verify, the provenance header, and
+    the human-readable artifact are unchanged (owner 2026-10-10: structured
+    output supersedes the model-formatted markdown contract; the table is
+    now machine-generated, so it is well-formed by construction)."""
+    for row in obj["rows"]:
+        for k in ("criterion", "evidence", "verdict"):
+            if "|" in row[k]:
+                raise WorkerError(
+                    f"structured VERIFY row contains a literal '|' in {k} — "
+                    f"cannot render the markdown artifact safely")
+    lines = ["# verification.md", "",
+             "| acceptance criterion | evidence | verdict |", "|---|---|---|"]
+    for row in obj["rows"]:
+        cell = lambda k: row[k].replace("\n", " ").strip()  # one table row per criterion
+        lines.append(f"| {cell('criterion')} | {cell('evidence')} | {cell('verdict')} |")
+    lines += ["", "## Limitations", ""]
+    lines += [f"- {x.replace(chr(10), ' ').strip()}" for x in obj["limitations"]]
+    return "\n".join(lines) + "\n"
 
 def _run_pxx(target_repo):
     from pipeline import endpoints
@@ -53,7 +133,9 @@ def _run_pxx(target_repo):
     assert_independence(ep, f"verifier '{ep.get('worker', PHASE)}'")
     check_access(ep)
     binary = pxx_bin()
-    require_bare_capable(binary)  # bare mode needs pxx >= 2.6.2 — no fallback
+    require_structured_capable(binary)  # structured VERIFY needs pxx >= 2.7.0 — no markdown fallback
+    schema = _verification_schema()
+    schema_sha = _schema_sha256(schema)
     intake = json.load(open("artifacts/intake.json"))
     acs = intake["acceptance_criteria"]
     evidence_parts = [
@@ -84,24 +166,17 @@ def _run_pxx(target_repo):
         "alone. DO NOT call any tools — no shell, no file reads. Tool use "
         "terminates the task.\n"
         "Output contract, exactly:\n"
-        "Return only the document below. Never repeat these instructions.\n"
-        "# verification.md\n\n"
-        "| acceptance criterion | evidence | verdict |\n|---|---|---|\n"
-        "Every table data row MUST begin with `|` and end with `|`. There "
-        "must be exactly one pipe-delimited data row per acceptance criterion "
-        "— a row whose first character is not `|` is invalid, and a row "
-        "missing its trailing `|` is invalid.\n"
-        "The FIRST cell of each data row contains ONLY the original "
-        "criterion text VERBATIM — BYTE-FOR-BYTE as it appears below, with the "
-        "exact original characters (never a paraphrase, never a unicode escape "
-        "sequence like \\u2014 in place of the character itself). NO markdown "
-        "emphasis or decoration in that cell — no **bold**, no `backticks`, no "
-        "labels, no bullets, nothing added or removed. Other cells may use "
-        "normal markdown. Verdict PASS "
-        "or FAIL with the specific evidence relied on; then a '## Limitations' "
-        "section stating honestly what this evidence does NOT prove "
-        "(non-empty, specific — never perfunctory).\n"
-        "Do not output these rules or any other text.\n"
+        "Return ONLY a JSON object conforming to the supplied response "
+        "schema — no markdown, no prose, no code fences, no commentary. "
+        "Never repeat these instructions.\n"
+        "One row per acceptance criterion, in order. Each row's \"criterion\" "
+        "field contains ONLY the original criterion text VERBATIM — "
+        "BYTE-FOR-BYTE as it appears below, with the exact original "
+        "characters (never a paraphrase, never a unicode escape sequence "
+        "like \\u2014 in place of the character itself). \"evidence\" names "
+        "the specific evidence relied on; \"verdict\" is exactly PASS or "
+        "FAIL. \"limitations\" is a non-empty list stating honestly what "
+        "this evidence does NOT prove (specific — never perfunctory).\n"
         "--- ACCEPTANCE CRITERIA ---\n" + "\n".join(f"- {a}" for a in acs) +
         "\n--- EVIDENCE ---\n" + evidence + "\n--- END EVIDENCE ---")
     argv = [binary, "ask", "-m", prompt,
@@ -109,6 +184,7 @@ def _run_pxx(target_repo):
             "--provider", ep.get("provider", "ollama"),
             "--budget-rounds", "4",
             "--budget-seconds", str(PXX_ASK_BUDGET_SECONDS),
+            "--response-format", SCHEMA_PATH,
             "--no-memory", "--sandbox"]
     try:
         if iso_path:  # pxx stashes repo-local config per invocation (+stash):
@@ -144,8 +220,9 @@ def _run_pxx(target_repo):
                      iso_config=ISOLATION_TOML_BARE,
                      budget_s=PXX_ASK_BUDGET_SECONDS,
                      timeout_s=PXX_ASK_TIMEOUT_SECONDS)
-    payload, evidence_failure = (bare_payload_evidence(r.stdout)
-                                 if r.returncode == 0 else ({}, None))
+    payload, evidence_failure = (bare_payload_evidence(
+        r.stdout, expect_response_format=schema_sha)
+        if r.returncode == 0 else ({}, None))
     from pipeline import envelope
     envelope.emit_worker_call(
         phase="verify", planned="pxx:ask", invoked="pxx:ask",
@@ -172,26 +249,35 @@ def _run_pxx(target_repo):
     if evidence_failure:  # observed payload was NOT bare — evidence failure
         raise WorkerError(f"{evidence_failure} — transcript "
                           f"artifacts/verify.transcript.log")
-    doc = _extract_document(r.stdout)
-    if doc is None:
+    obj = _extract_json(r.stdout)
+    if obj is None:
         raise WorkerError(
-            "verify produced no verification document in the required format "
-            "— refusing to fabricate; see artifacts/verify.transcript.log")
+            "verify produced no parseable JSON object in the structured "
+            "response — refusing to fabricate; see "
+            "artifacts/verify.transcript.log")
+    shape_error = _validate_verification(obj)
+    if shape_error:
+        raise WorkerError(
+            f"VERIFY structured output fails the contract shape: "
+            f"{shape_error} — refusing to write a non-conformant artifact "
+            f"(see artifacts/verify.transcript.log)")
     # Mechanical verbatim traceability (failure class, lifecycle run 10
     # 2026-10-04): every acceptance criterion must appear BYTE-FOR-BYTE in
-    # the document — the verifier addresses the actual criterion text, never
-    # a paraphrase or a serialization artifact (the run-10 verifier emitted a
-    # literal \u2014 escape instead of an em dash; gate_verify caught it
-    # post-write; this catches it BEFORE write, same pattern as PLAN's 1:1
-    # pre-write check). gate_verify re-checks post-write; that stays.
+    # a row's criterion field — the verifier addresses the actual criterion
+    # text, never a paraphrase or a serialization artifact (the run-10
+    # verifier emitted a literal \u2014 escape instead of an em dash;
+    # gate_verify caught it post-write; this catches it BEFORE write, same
+    # pattern as PLAN's 1:1 pre-write check). gate_verify re-checks the
+    # rendered markdown post-write; that stays.
     acs = intake["acceptance_criteria"]
-    untraced = _untraced_criteria(doc, acs)
+    untraced = _untraced_criteria(obj, acs)
     if untraced:
         raise WorkerError(
             f"VERIFY output fails verbatim traceability: {len(untraced)} of "
             f"{len(acs)} criteria not quoted byte-for-byte (first: "
             f"{untraced[0][:60]}…) — refusing to write a non-conformant "
             f"artifact (see artifacts/verify.transcript.log)")
+    doc = _render_markdown(obj)
     if iso_path:  # read-only boundary (ADV-020): HEAD + ignored-aware status
         assert_read_only(target_repo, boundary, "VERIFY")
     with open("artifacts/verification.md", "w") as f:
@@ -250,22 +336,3 @@ def _provenance_header(ep):
         "",
     ]
     return "\n".join(lines)
-
-def _extract_document(stdout):
-    """The verification document from pxx stdout: from the '# verification'
-    heading through the end, pxx status trailers stripped. None if absent."""
-    lines, started = [], False
-    for line in stdout.splitlines():
-        s = line.strip()
-        for prefix in ("[COMPLETED]", "[OUTCOME]", "[DONE]"):
-            if s.startswith(prefix):
-                s = s[len(prefix):].strip()
-        if not started and s.lstrip("# ").lower().startswith("verification"):
-            started = True
-            lines.append("# verification.md")
-            continue
-        if started:
-            lines.append(re.sub(r"\s*\(rounds=\d+.*\)$", "", line))  # pxx status trailer
-    if not started:
-        return None
-    return "\n".join(lines).rstrip() + "\n"

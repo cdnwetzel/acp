@@ -123,7 +123,8 @@ def emit_worker_call(*, phase, planned, invoked, command, exit_status,
                      runtime=None, iso_config=None, pxx_session_id=None,
                      payload_mode_expected=None, payload_mode=None,
                      system_message_present=None, tools_key_present=None,
-                     tool_count=None):
+                     tool_count=None, response_format_present=None,
+                     response_format_sha256=None, json_schema_name=None):
     """One record per real worker invocation. prompt/inputs/output are raw
     strings hashed HERE — the envelope never sees bodies. artifacts maps
     display name -> file path; file CONTENTS are hashed (integrity anchor
@@ -180,6 +181,12 @@ def emit_worker_call(*, phase, planned, invoked, command, exit_status,
         rec["tools_key_present"] = tools_key_present
     if tool_count is not None:
         rec["tool_count"] = tool_count
+    if response_format_present is not None:
+        rec["response_format_present"] = response_format_present
+    if response_format_sha256 is not None:
+        rec["response_format_sha256"] = response_format_sha256
+    if json_schema_name is not None:
+        rec["json_schema_name"] = json_schema_name
     _append(rec)
 
 def reconcile(artifacts_dir="artifacts"):

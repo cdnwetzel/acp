@@ -93,7 +93,17 @@ def _ex_verbatim_trace(sandbox, case):
         if _sha256_file(path) != cited:
             raise HarnessError(f"aux fixture hash mismatch: {path}")
     acs = json.load(open(intake_path))["acceptance_criteria"]
-    untraced = verify_phase._untraced_criteria(open(doc_path).read(), acs)
+    # 2026-10-10 (F-001 structured VERIFY): the fixtures are historical
+    # markdown docs, but the contract now lives on the JSON criterion FIELD.
+    # Replay the same fixture text through the one shared criterion-cell
+    # parser, then apply the JSON-era traceability rule to those cells —
+    # escape corruption and paraphrase are medium-independent and must
+    # still be caught.
+    from pipeline.gates import verdict_rows
+    cells = [c for c in verdict_rows(open(doc_path).read())
+             if c[0] != "acceptance criterion"]
+    untraced = verify_phase._untraced_criteria(
+        {"rows": [{"criterion": c[0]} for c in cells]}, acs)
     if untraced:
         return ("fail", "gate",
                 f"verbatim pre-write check: {len(untraced)} of {len(acs)} "
