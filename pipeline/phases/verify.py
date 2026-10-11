@@ -177,6 +177,9 @@ def _run_pxx(target_repo):
         "the specific evidence relied on; \"verdict\" is exactly PASS or "
         "FAIL. \"limitations\" is a non-empty list stating honestly what "
         "this evidence does NOT prove (specific — never perfunctory).\n"
+        "The rows array contains EXACTLY as many rows as there are "
+        "criteria — never multiple rows for one criterion, never a row "
+        "for anything else.\n"
         "Each criterion below is the complete text — one per line, with NO "
         "bullet, numbering, or other prefix; the criterion field must "
         "contain exactly that text and nothing more.\n"
@@ -280,6 +283,18 @@ def _run_pxx(target_repo):
             f"{len(acs)} criteria not quoted byte-for-byte (first: "
             f"{untraced[0][:60]}…) — refusing to write a non-conformant "
             f"artifact (see artifacts/verify.transcript.log)")
+    # Exactly one row per criterion, in order (structured-drill attempt 2,
+    # 2026-10-10: the model emitted FOUR rows for one criterion — one per
+    # evidence source — including a spurious evidence:"none"/FAIL row that
+    # gate_verify then correctly failed post-write; catch the count/order
+    # drift BEFORE write, same 1:1 pattern as PLAN).
+    criteria_seq = [row["criterion"] for row in obj["rows"]]
+    if criteria_seq != acs:
+        raise WorkerError(
+            f"VERIFY rows are not exactly one-per-criterion in order "
+            f"({len(criteria_seq)} rows for {len(acs)} criteria) — refusing "
+            f"to write a non-conformant artifact (see "
+            f"artifacts/verify.transcript.log)")
     doc = _render_markdown(obj)
     if iso_path:  # read-only boundary (ADV-020): HEAD + ignored-aware status
         assert_read_only(target_repo, boundary, "VERIFY")

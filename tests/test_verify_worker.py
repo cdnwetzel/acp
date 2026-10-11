@@ -230,6 +230,7 @@ def test_prompt_demands_structured_json(tmp_path, monkeypatch):
     # 2026-10-10: the model faithfully copied the "- " bullet into the
     # criterion field — a presentation defect, fixed by plain presentation)
     assert "NO bullet, numbering, or other prefix" in prompt
+    assert "EXACTLY as many rows as there are criteria" in prompt
     assert f"\n- {AC}" not in prompt
     # the markdown-table contract is GONE — the schema carries the structure
     assert "MUST begin with `|`" not in prompt
@@ -460,5 +461,61 @@ def test_receipt_rejects_wrong_schema_hash(tmp_path, monkeypatch):
     import pipeline.endpoints as endpoints
     monkeypatch.setattr(endpoints, "resolve", lambda phase: EP)
     with pytest.raises(WorkerError, match="did not carry the"):
+        verify.run(worker="pxx")
+    assert not os.path.exists("artifacts/verification.md")
+
+
+def _phase_fixture(tmp_path, monkeypatch, obj):
+    """Shared phase-level scaffolding: hermetic pxx 2.7.0 answering with the
+    given object, independence/access patched, canonical endpoint."""
+    monkeypatch.chdir(tmp_path)
+    os.makedirs("artifacts/diff")
+    json.dump({"acceptance_criteria": [AC]}, open("artifacts/intake.json", "w"))
+    open("artifacts/test.log", "w").write("COMMAND: pytest\nEXIT_CODE: 0\nDURATION_S: 1\n1 passed\n")
+    json.dump({"diffs": []}, open("artifacts/diff/manifest.json", "w"))
+    open("artifacts/review.md", "w").write("# review.md\n")
+    _fake_bare_pxx(tmp_path, monkeypatch,
+                   "[COMPLETED] " + json.dumps(obj) + "\n" + OUTCOME_SESSION)
+    monkeypatch.setattr(verify, "assert_independence", lambda *a, **kw: None)
+    monkeypatch.setattr(verify, "check_access", lambda ep: None)
+    import pipeline.endpoints as endpoints
+    monkeypatch.setattr(endpoints, "resolve", lambda phase: EP)
+
+def test_run_pxx_refuses_duplicate_rows_one_per_criterion(tmp_path, monkeypatch):
+    """Structured-drill attempt-2 stop (2026-10-10): the model emitted FOUR
+    rows for ONE criterion — one per evidence source, including a spurious
+    evidence:'none'/FAIL row that gate_verify then failed post-write. The
+    1:1 ordered pre-write check now catches the count drift first."""
+    dup = {"rows": [
+        {"criterion": AC, "evidence": "test.log", "verdict": "PASS"},
+        {"criterion": AC, "evidence": "diff manifest", "verdict": "PASS"},
+        {"criterion": AC, "evidence": "review findings", "verdict": "PASS"},
+        {"criterion": AC, "evidence": "none", "verdict": "FAIL"},
+    ], "limitations": ["x"]}
+    _phase_fixture(tmp_path, monkeypatch, dup)
+    with pytest.raises(WorkerError, match="one-per-criterion in order"):
+        verify.run(worker="pxx")
+    assert not os.path.exists("artifacts/verification.md")
+
+def test_run_pxx_refuses_reordered_rows(tmp_path, monkeypatch):
+    """Two criteria, rows swapped: sets match but the contract is ordered."""
+    ac2 = AC + " Second."
+    monkeypatch.chdir(tmp_path)
+    os.makedirs("artifacts/diff")
+    json.dump({"acceptance_criteria": [AC, ac2]}, open("artifacts/intake.json", "w"))
+    open("artifacts/test.log", "w").write("COMMAND: pytest\nEXIT_CODE: 0\nDURATION_S: 1\n1 passed\n")
+    json.dump({"diffs": []}, open("artifacts/diff/manifest.json", "w"))
+    open("artifacts/review.md", "w").write("# review.md\n")
+    swapped = {"rows": [
+        {"criterion": ac2, "evidence": "t", "verdict": "PASS"},
+        {"criterion": AC, "evidence": "t", "verdict": "PASS"},
+    ], "limitations": ["x"]}
+    _fake_bare_pxx(tmp_path, monkeypatch,
+                   "[COMPLETED] " + json.dumps(swapped) + "\n" + OUTCOME_SESSION)
+    monkeypatch.setattr(verify, "assert_independence", lambda *a, **kw: None)
+    monkeypatch.setattr(verify, "check_access", lambda ep: None)
+    import pipeline.endpoints as endpoints
+    monkeypatch.setattr(endpoints, "resolve", lambda phase: EP)
+    with pytest.raises(WorkerError, match="one-per-criterion in order"):
         verify.run(worker="pxx")
     assert not os.path.exists("artifacts/verification.md")
