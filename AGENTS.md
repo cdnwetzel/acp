@@ -136,15 +136,31 @@ plus `PXX_TIMEOUT_MARGIN_SECONDS = 60`; the outer subprocess kill is derived
 transcripts report both values (including a `[timeout policy]` header line on
 the success path, `b051846`). Suite: 304 passed.
 
-F-001 REMAINS OPEN (owner ruling 2026-10-10, ledger row 141): the fresh
-VERIFY drill (`/tmp/acp-f001-verify-drill-20261010`) failed CLOSED — the
-model emitted a pipeless leading edge on the data row (the 2026-10-06 stop
-class, reproduced at temperature 0.0 under the combined prompt) and the
-pre-write verbatim-traceability check refused to write the artifact. The
-machinery is proven; model conformance is not. Prompt-layer repair has now
-failed this class across two prompt revisions and two temperatures; the next
-evaluation is provider-level structured output (schema-constrained decoding)
-for VERIFY. No drill retry without an explicit owner decision.
+F-001 status (owner ruling 2026-10-10, ledger row 141): the combined-prompt
+drill (`/tmp/acp-f001-verify-drill-20261010`) failed CLOSED — pipeless
+leading edge on the data row at temperature 0.0. Prompt-layer repair had
+failed this class across two revisions and two temperatures, so the owner
+authorized moving the VERIFY output contract to provider-enforced
+structured output (`docs/structured-verify-plan-20261010.md`, decisions
+a–d approved).
+
+2026-10-10 (later): structured VERIFY IMPLEMENTED — pxx 2.7.0
+`--response-format` (pxx `7e499bd` + override-drop fix `1009cf0`, caught
+by the new audit receipt on the first live probe; pxx suite 1505 passed)
+and ACP wiring (`28c29df`, prompt-presentation fixes `4137f9e`/`93a9ce0`;
+suite 313→315 passed). VERIFY now sends `contracts/verification.schema.json`
+(`verification_v1`, hash-pinned), parses strict JSON, re-validates shape +
+verdict enum + byte-exact criterion fields + exactly-one-row-per-criterion
+in order BEFORE write, and renders the markdown artifact deterministically
+(gate_verify unchanged). Live probe THROUGH pxx: receipt cross-check MATCH
+(canonical schema sha256 `bdbf1def…`). Fresh VERIFY drill
+(`/tmp/acp-f001-structured-drill-20261010`): attempt 1 fail-closed on a
+copied bullet prefix (prompt presentation defect, fixed), attempt 2
+fail-closed post-write at gate_verify on a spurious fourth FAIL row (1:1
+row check added), attempt 3 GREEN — byte-exact PASS row, honest
+limitations, clean envelope record (observed bare + schema sha match).
+F-001 closure is the owner's call; the closure bar's probe and drill items
+are met.
 
 Endpoint topology rule (owner decision 2026-10-08): the repo manifest's
 `lan`-class entries are canonical — they reflect the declared HOME-fleet
