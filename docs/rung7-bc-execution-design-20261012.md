@@ -1,7 +1,16 @@
 # Rung 7 — paths (b) and (c) concrete execution design, v2 (2026-10-12)
 
-Status: **DESIGN — returned for owner authorization. No waiver recorded,
-nothing executed.** v2 resolves two owner review findings:
+Status: **(b) EXECUTED and closed** (canonical ledger seq 156; VERIFY
+boundary fired on a real verifier judgment). **(c1) STAGED** at
+`gate_open:intake`, awaiting the owner's intake decision. **(c2) SUPERSEDED
+2026-10-12** — path (b) demonstrated the VERIFY boundary with a real model
+judgment, making the controlled-FAIL trigger redundant; the replacement
+design targets the gap (b) exposed (VALIDATE visibility) in
+`docs/rung7-c2-validate-visibility-design-20261012.md`. The (c2) sandbox
+`/tmp/acp-rung7-20261012-c2-verify-boundary` remains preserved and
+unexecuted at `gate_open:intake`.
+
+v2 resolves two owner review findings:
 
 1. **Injected-manifest vs CODE-completion binding conflict** (affects ALL
    waiver paths on injected lifecycles — (b), (c1), (c2)). The shared
