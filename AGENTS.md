@@ -96,7 +96,7 @@ python3 -m pipeline.approvals <gate> approve|deny "reason"
 # gates: intake | plan | validate
 ```
 
-**Current test status (2026-10-12): 350 passed, 0 failed**
+**Current test status (2026-10-12): 356 passed, 0 failed**
 (`python3 -m pytest tests/ -q`). C6 (2026-10-03) landed hash-chaining;
 the 2026-10-04 repair program added the legacy-prefix seal (row 78),
 lifecycle identity, hash-bound approvals, strict gate parsers, envelope
@@ -216,7 +216,13 @@ refusal); `gate_validate` compares exact finding text, not just identifiers;
 reconciliation resolves each completion's exact `waiver_receipts` row hashes
 with full binding + sequence checks (WAIVER_STALE_ATTEMPT / WAIVER_SEQUENCE
 added), and `_applied_waivers` resolves by row hash — an orphaned receipt
-cannot leak in via identical-bytes reruns.
+cannot leak in via identical-bytes reruns. Repair pass 2 (same day):
+`verify_window` rechecks the CODE manifest's existence and bytes under the
+completion lock; shared binding validator `pipeline/waiver_proof.py` (one
+implementation for runner + reconcile) requires every binding field —
+missing fields fail instead of skipping verification — verifies the
+started/failed hashes form ONE attempt, and checks the receipt's manifest
+binding against the completed CODE manifest (WAIVER_MANIFEST).
 
 Endpoint topology rule (owner decision 2026-10-08): the repo manifest's
 `lan`-class entries are canonical — they reflect the declared HOME-fleet

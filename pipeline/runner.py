@@ -100,23 +100,27 @@ def _waiver_resume(rows):
     if not os.path.exists("artifacts/review.md"):
         raise gates.GateError("review waiver-resume: artifacts/review.md is "
                               "missing — the preserved artifact is required")
+    if not os.path.exists("artifacts/diff/manifest.json"):
+        raise gates.GateError("review waiver-resume: artifacts/diff/"
+                              "manifest.json is missing — the reviewed CODE "
+                              "manifest is required for binding")
     review_h = _sha256_file("artifacts/review.md")
-    manifest_h = (_sha256_file("artifacts/diff/manifest.json")
-                  if os.path.exists("artifacts/diff/manifest.json") else None)
+    manifest_h = _sha256_file("artifacts/diff/manifest.json")
+    from pipeline import waiver_proof
     for r in receipts:
-        d = r.get("detail") or {}
         rid = (r.get("hash") or "?")[:16]
-        if d.get("lifecycle_id") != lc:
-            raise gates.GateError(f"waiver receipt {rid}… binds lifecycle "
-                                  f"{d.get('lifecycle_id')} — not current {lc}")
-        if (d.get("attempt_started_hash") != last_start.get("hash")
-                or d.get("attempt_failed_hash") != fail.get("hash")):
-            raise gates.GateError(f"waiver receipt {rid}… is bound to a "
-                                  f"superseded review attempt — orphaned")
-        if d.get("review_md_sha256") != review_h:
+        # Shared binding validator (one implementation for runner +
+        # reconcile). Window membership is already established by
+        # _review_failed_window; the validator enforces required fields,
+        # lifecycle, and attempt-pair integrity.
+        errs = waiver_proof.check_receipt_bindings(r, rows, lc)
+        if errs:
+            raise gates.GateError("; ".join(errs))
+        d = r["detail"]
+        if d["review_md_sha256"] != review_h:
             raise gates.GateError(f"waiver receipt {rid}… binds review.md "
                                   f"bytes that differ from disk — drifted")
-        if manifest_h and d.get("diff_manifest_sha256") != manifest_h:
+        if d["diff_manifest_sha256"] != manifest_h:
             raise gates.GateError(f"waiver receipt {rid}… binds a diff "
                                   f"manifest that differs from disk — drifted")
     findings = gates.parse_findings(open("artifacts/review.md").read())
@@ -154,6 +158,15 @@ def _waiver_resume(rows):
         if _sha256_file("artifacts/review.md") != review_h:
             raise gates.GateError("review.md changed during waiver resume — "
                                   "refusing to complete on drifted evidence")
+        # P1 (review 2026-10-12, second pass): the CODE manifest is part of
+        # the binding — recheck its existence and bytes under the same lock.
+        if not os.path.exists("artifacts/diff/manifest.json"):
+            raise gates.GateError("diff manifest deleted during waiver "
+                                  "resume — refusing to complete")
+        if _sha256_file("artifacts/diff/manifest.json") != manifest_h:
+            raise gates.GateError("diff manifest changed during waiver "
+                                  "resume — refusing to complete on drifted "
+                                  "evidence")
     state.transact("review", "complete", artifact="artifacts/review.md",
                    verify=verify_window,
                    detail={**(_hash_detail("artifacts/review.md") or {}),

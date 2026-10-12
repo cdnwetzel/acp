@@ -474,9 +474,8 @@ def test_reconcile_waiver_unapplied_unorphaned(tmp_path, monkeypatch):
     state.emit("review", "gate_failed",
                detail={"error": "OPEN", "artifact_sha256": "x" * 64})
     fh_row = state.rows()[-1]["hash"]
-    state.emit("review", "owner_waiver", detail={
-        "lifecycle_id": "lcrec003", "finding_sha256": "f" * 64,
-        "attempt_started_hash": s, "attempt_failed_hash": fh_row})
+    state.emit("review", "owner_waiver",
+               detail=_receipt_detail("lcrec003", "f" * 64, s, fh_row))
     envelope.emit_run_manifest({})
     report = envelope.reconcile()
     assert not report["ok"]
@@ -601,3 +600,149 @@ def test_applied_waivers_resolve_exact_receipt_rows(tmp_path, monkeypatch):
     assert len(applied) == 1
     assert applied[0]["receipt_hash"] == receipt2
     assert applied[0]["attempt_started_hash"] != receipt2  # sanity: attempt 2
+
+# ------------------------------------------- repair pass 2 (2026-10-12) ---
+
+def _waive_planted(tmp_path):
+    r = subprocess.run([sys.executable, "-m", "pipeline.approvals", "review",
+                        "waive", "TASK-3", "1", "accepted"],
+                       capture_output=True, text=True, env=_env(), cwd=tmp_path)
+    assert r.returncode == 0, r.stderr
+
+def test_waiver_completion_rechecks_manifest_mutation(tmp_path, monkeypatch):
+    """P1: the CODE manifest is rechecked under the completion lock —
+    mutation between gate evidence and completion refuses."""
+    _mock_lifecycle_to_review_failure(
+        tmp_path, monkeypatch, "issue: planted defect — OPEN: violates AC-9")
+    _waive_planted(tmp_path)
+    real_emit_gate = envelope.emit_gate
+    def interleaved(phase, result, detail=""):
+        real_emit_gate(phase, result, detail)
+        if phase == "review" and result == "pass":
+            open("artifacts/diff/manifest.json", "a").write("\n# mutated\n")
+    monkeypatch.setattr(envelope, "emit_gate", interleaved)
+    with pytest.raises(gates.GateError, match="manifest changed"):
+        runner.run_all()
+    assert not [e for e in state.rows()
+                if e["phase"] == "review" and e["event"] == "complete"]
+
+def test_waiver_completion_rechecks_manifest_deletion(tmp_path, monkeypatch):
+    _mock_lifecycle_to_review_failure(
+        tmp_path, monkeypatch, "issue: planted defect — OPEN: violates AC-9")
+    _waive_planted(tmp_path)
+    real_emit_gate = envelope.emit_gate
+    def interleaved(phase, result, detail=""):
+        real_emit_gate(phase, result, detail)
+        if phase == "review" and result == "pass":
+            os.remove("artifacts/diff/manifest.json")
+    monkeypatch.setattr(envelope, "emit_gate", interleaved)
+    with pytest.raises(gates.GateError, match="manifest deleted"):
+        runner.run_all()
+    assert not [e for e in state.rows()
+                if e["phase"] == "review" and e["event"] == "complete"]
+
+def _ledgered_waiver_completion(lc, manifest_h="y" * 64):
+    """A complete, well-formed waiver chain; returns the receipt detail."""
+    fh = "f" * 64
+    state.emit("intake", "started", detail={"lifecycle_id": lc})
+    state.emit("code", "complete", artifact="artifacts/diff/manifest.json",
+               detail={"artifact_sha256": manifest_h})
+    state.emit("review", "started")
+    s1 = state.rows()[-1]["hash"]
+    state.emit("review", "gate_failed",
+               detail={"error": "OPEN", "artifact_sha256": "x" * 64})
+    f1 = state.rows()[-1]["hash"]
+    state.emit("review", "owner_waiver",
+               detail=_receipt_detail(lc, fh, s1, f1))
+    rh = state.rows()[-1]["hash"]
+    state.emit("review", "complete", artifact="artifacts/review.md",
+               detail={"artifact_sha256": "x" * 64, "waived_findings": [fh],
+                       "waiver_receipts": [rh]})
+    envelope.emit_run_manifest({})
+    envelope.emit_gate("review", "pass",
+                       "owner-waiver resume (F-005); waived_findings=" + fh)
+    return fh
+
+def test_reconcile_complete_valid_waiver_chain_is_clean(tmp_path, monkeypatch):
+    """Positive control: a fully bound waiver chain reconciles clean."""
+    monkeypatch.chdir(tmp_path)
+    os.makedirs("artifacts", exist_ok=True)
+    open("artifacts/review.md", "w").write("x")
+    _ledgered_waiver_completion("lcrec100")
+    report = envelope.reconcile()
+    assert report["ok"], report["failures"]
+
+def test_reconcile_receipt_missing_binding_field(tmp_path, monkeypatch):
+    """P1: a receipt missing any required binding field fails — incomplete
+    claims never skip verification."""
+    monkeypatch.chdir(tmp_path)
+    os.makedirs("artifacts", exist_ok=True)
+    open("artifacts/review.md", "w").write("x")
+    fh = "f" * 64
+    state.emit("intake", "started", detail={"lifecycle_id": "lcrec101"})
+    state.emit("code", "complete", artifact="artifacts/diff/manifest.json",
+               detail={"artifact_sha256": "y" * 64})
+    state.emit("review", "started")
+    s1 = state.rows()[-1]["hash"]
+    state.emit("review", "gate_failed",
+               detail={"error": "OPEN", "artifact_sha256": "x" * 64})
+    f1 = state.rows()[-1]["hash"]
+    d = _receipt_detail("lcrec101", fh, s1, f1)
+    del d["diff_manifest_sha256"]
+    state.emit("review", "owner_waiver", detail=d)
+    rh = state.rows()[-1]["hash"]
+    state.emit("review", "complete", artifact="artifacts/review.md",
+               detail={"artifact_sha256": "x" * 64, "waived_findings": [fh],
+                       "waiver_receipts": [rh]})
+    envelope.emit_run_manifest({})
+    envelope.emit_gate("review", "pass",
+                       "owner-waiver resume (F-005); waived_findings=" + fh)
+    report = envelope.reconcile()
+    assert not report["ok"]
+    assert any("WAIVER_AUTHORITY" in f and "lacks required" in f
+               for f in report["failures"])
+
+def test_reconcile_attempt_pair_mismatch(tmp_path, monkeypatch):
+    """started+failed hashes that both exist but belong to DIFFERENT
+    attempts do not form a window."""
+    monkeypatch.chdir(tmp_path)
+    os.makedirs("artifacts", exist_ok=True)
+    open("artifacts/review.md", "w").write("x")
+    fh = "f" * 64
+    state.emit("intake", "started", detail={"lifecycle_id": "lcrec102"})
+    state.emit("code", "complete", artifact="artifacts/diff/manifest.json",
+               detail={"artifact_sha256": "y" * 64})
+    state.emit("review", "started")
+    s1 = state.rows()[-1]["hash"]
+    state.emit("review", "gate_failed",
+               detail={"error": "OPEN", "artifact_sha256": "x" * 64})
+    state.emit("review", "started")  # attempt 2
+    state.emit("review", "gate_failed",
+               detail={"error": "OPEN", "artifact_sha256": "x" * 64})
+    f2 = state.rows()[-1]["hash"]
+    # receipt binds attempt-1's started with attempt-2's failure
+    state.emit("review", "owner_waiver",
+               detail=_receipt_detail("lcrec102", fh, s1, f2))
+    rh = state.rows()[-1]["hash"]
+    state.emit("review", "complete", artifact="artifacts/review.md",
+               detail={"artifact_sha256": "x" * 64, "waived_findings": [fh],
+                       "waiver_receipts": [rh]})
+    envelope.emit_run_manifest({})
+    envelope.emit_gate("review", "pass",
+                       "owner-waiver resume (F-005); waived_findings=" + fh)
+    report = envelope.reconcile()
+    assert not report["ok"]
+    assert any("do not form one attempt" in f for f in report["failures"])
+
+def test_reconcile_wrong_manifest_binding(tmp_path, monkeypatch):
+    """The receipt's manifest binding must equal the completed CODE
+    manifest's hash."""
+    monkeypatch.chdir(tmp_path)
+    os.makedirs("artifacts", exist_ok=True)
+    open("artifacts/review.md", "w").write("x")
+    _ledgered_waiver_completion("lcrec103", manifest_h="m" * 64)
+    # ^ receipt binds diff_manifest_sha256 "y"*64 (the _receipt_detail
+    # default) while CODE completed "m"*64
+    report = envelope.reconcile()
+    assert not report["ok"]
+    assert any("WAIVER_MANIFEST" in f for f in report["failures"])

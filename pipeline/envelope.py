@@ -375,6 +375,7 @@ def reconcile(artifacts_dir="artifacts"):
     #    failure. (A run parked at an open gate awaiting the human is fine.)
     if ledger_present:
         from pipeline.runner import HUMAN_GATES, ORDER
+        from pipeline import waiver_proof
         lc_rows = state.rows(ledger_path)
         lc_done = any(r.get("phase") == "lifecycle" and r.get("event") == "done"
                       for r in lc_rows)
@@ -443,39 +444,14 @@ def reconcile(artifacts_dir="artifacts"):
                         f"WAIVER_AUTHORITY: completion {cid}… names receipt "
                         f"{str(h)[:16]}… which is not an owner_waiver row")
                     continue
-                rd = r.get("detail") or {}
-                rid = (r.get("hash") or "?")[:16]
-                if cur_lc and rd.get("lifecycle_id") \
-                        and rd["lifecycle_id"] != cur_lc:
-                    report["failures"].append(
-                        f"WAIVER_AUTHORITY: receipt {rid}… binds lifecycle "
-                        f"{rd['lifecycle_id']} — not the current {cur_lc}")
-                if (rd.get("attempt_started_hash") not in started_hashes
-                        or rd.get("attempt_failed_hash") not in failed_rows):
-                    report["failures"].append(
-                        f"WAIVER_AUTHORITY: receipt {rid}… attempt binding "
-                        f"matches no review started/gate_failed row — stale "
-                        f"or foreign")
-                    continue
-                bf = failed_rows[rd["attempt_failed_hash"]]
-                if not (bf.get("seq", -1) < r.get("seq", -1)
-                        < c.get("seq", -1)):
-                    report["failures"].append(
-                        f"WAIVER_SEQUENCE: receipt {rid}… is not ordered "
-                        f"gate_failed < receipt < completion")
-                if any(bf.get("seq", -1) < s.get("seq", -1) < c.get("seq", -1)
-                       for s in started_rows):
-                    report["failures"].append(
-                        f"WAIVER_STALE_ATTEMPT: receipt {rid}… applied by "
-                        f"completion {cid}… after a new review attempt "
-                        f"started — the bound window was orphaned")
-                if (d.get("artifact_sha256") and rd.get("review_md_sha256")
-                        and rd["review_md_sha256"] != d["artifact_sha256"]):
-                    report["failures"].append(
-                        f"WAIVER_AUTHORITY: receipt {rid}… binds review.md "
-                        f"{rd['review_md_sha256'][:16]}… but completion {cid}… "
-                        f"completed {d['artifact_sha256'][:16]}…")
-                covered.add(rd.get("finding_sha256"))
+                # Shared validator (pipeline/waiver_proof.py — one binding
+                # implementation for runner and reconcile): every field
+                # required, attempt-pair integrity, sequence, staleness,
+                # review.md bytes, and the CODE manifest binding.
+                report["failures"].extend(
+                    waiver_proof.check_receipt_bindings(r, lc_rows, cur_lc,
+                                                        completion=c))
+                covered.add((r.get("detail") or {}).get("finding_sha256"))
             if waived and covered != waived:
                 report["failures"].append(
                     f"WAIVER_COVERAGE: completion {cid}… waived_findings do "
@@ -484,20 +460,12 @@ def reconcile(artifacts_dir="artifacts"):
             h = r.get("hash")
             if h in referenced:
                 continue
-            d = r.get("detail") or {}
             rid = (h or "?")[:16]
-            if cur_lc and d.get("lifecycle_id") and d["lifecycle_id"] != cur_lc:
-                report["failures"].append(
-                    f"WAIVER_AUTHORITY: receipt {rid}… binds lifecycle "
-                    f"{d['lifecycle_id']} — not the current {cur_lc}")
-            if (d.get("attempt_started_hash") not in started_hashes
-                    or d.get("attempt_failed_hash") not in failed_rows):
-                report["failures"].append(
-                    f"WAIVER_AUTHORITY: receipt {rid}… attempt binding "
-                    f"matches no review started/gate_failed row — stale or "
-                    f"foreign")
+            errs = waiver_proof.check_receipt_bindings(r, lc_rows, cur_lc)
+            if errs:
+                report["failures"].extend(errs)
                 continue
-            bf = failed_rows[d["attempt_failed_hash"]]
+            bf = failed_rows[r["detail"]["attempt_failed_hash"]]
             orphaned = any(s.get("seq", -1) > bf.get("seq", -1)
                            for s in started_rows)
             if not orphaned:
