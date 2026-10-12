@@ -1,15 +1,14 @@
-# Rung 7 — F-005 live qualification: OPEN → halt → linked recovery; owner waiver → VERIFY boundary (2026-10-12)
+# Rung 7 — F-005 qualification: all five properties (2026-10-12)
 
-Status: **completed drill pair, waiver-advance path (b), and TEST-boundary
-path (c1)**. Qualifies the F-005 owner-waiver contract's OPEN→halt→recovery
-path, receipt-bound waiver resume, and both later-gate boundaries (VERIFY,
-TEST). **Outstanding: VALIDATE visibility of waivers is NOT qualified**
-(replacement design pending owner authorization). This record is drill
-evidence; no production-readiness claim.
+Status: **F-005 qualification matrix COMPLETE** — OPEN→halt→linked
+recovery, receipt-bound waiver resume, VERIFY boundary, TEST boundary, and
+VALIDATE visibility. Scopes differ per path and are stated with each; no
+production-readiness claim.
 
 Canonical ledger: seq 154 (challenge), seq 155 (recovery), seq 156 (path b
-waiver → VERIFY halt), seq 157 (path c1 TEST boundary).
-Bundles: `docs/evidence/rung7-20261012/` (five tarballs; live copies in
+waiver → VERIFY halt), seq 157 (path c1 TEST boundary), seq 158 (path c2′
+VALIDATE visibility).
+Bundles: `docs/evidence/rung7-20261012/` (six tarballs; live copies in
 `/tmp/acp-rung7-20261012*`).
 
 ## Lifecycle 0 — denied intake (`/tmp/acp-rung7-20261012`, seq 3 terminal)
@@ -162,14 +161,58 @@ owner-waiver resume with no reviewer recall, the VERIFY boundary — a
 waiver does not override a VERIFY FAIL (real model judgment) — and the
 TEST boundary — a waiver does not override a real TEST failure.
 
-Not qualified:
+## Lifecycle 4 — path (c2′): VALIDATE visibility (`c9049ba26f4f`, `done` at seq 22)
 
-- **VALIDATE visibility of a waiver** — a waived finding must reach
-  `gate_open:validate` with validation.md's `## Owner waivers` section
-  content-checked against the receipt inventory. Replacement design
-  `docs/rung7-c2-validate-visibility-design-20261012.md` (v2, deterministic
-  controlled REVIEW) is pending owner authorization; the claim will be
-  limited to deterministic waiver propagation and VALIDATE content
-  checking, not live-model acceptance.
-- **Path (c2): VERIFY boundary** — as originally designed, superseded:
-  path (b) already demonstrated the property with a real verifier judgment.
+Sandbox `/tmp/acp-rung7-20261012-c2p-validate-visibility`. **Canonical
+runner, gates, and `waiver_proof.py` hash-verified unchanged** (`fb8742db…`,
+`73ea192b…`, `8f454a61…`); the only sandbox deltas are two labeled
+controlled-worker branches (`phases/review.py` `552cb860…`,
+`phases/verify.py` `883cc555…`; diffs hashed in the bundle's SCAFFOLD.md).
+No injection, no validator override.
+
+- Intake approved (`9900af04…`, byte-identical to the twice-approved rung-7
+  intake); plan approved (`43bbdf7a…`). CODE: `c14d22b`, `b8842c2`, clean.
+- Controlled REVIEW wrote the **pre-registered** OPEN finding — a true
+  statement about the immutable seeded suite's limited coverage (0/55/100),
+  asserting no defect. Finding hash `bfeaa1e3…` matched pre-registration
+  exactly; canonical `gate_review` halted at seq 11.
+- Owner waiver seq 12 (receipt `48d34366…`): drill-only scope ruling —
+  limited evidence accepted per AC-1's own EVIDENCE SOURCE clause.
+- Resume: `review complete` seq 13, **zero reviewer recall**; TEST live,
+  2 passed, EXIT_CODE 0; controlled VERIFY PASS, labeled synthetic in the
+  artifact header, evidence cells, Limitations, and envelope records.
+- validation.md machine-generated the `## Owner waivers` section (task,
+  finding hash, receipt hash, reason, exact finding text); canonical
+  `gate_validate` content-checked it against the receipt inventory →
+  `gate_open:validate` seq 20 → owner VALIDATE approved (`f4d396a3…`,
+  explicitly not a conformance/live-model/production approval) → `done`
+  seq 22. Chain valid (23 rows, head `f1285d45…`); reconcile ok, 0
+  failures, 19 records — including waiver-authority check 7 under the
+  canonical validator.
+
+Preflight (before any gate decision, canonical gates loaded by path):
+`gate_review` halted on the controlled OPEN finding with no receipt;
+`gate_verify` passed the synthetic artifact's format and byte-exact
+traceability.
+
+**Qualified (deterministic/controlled scope):** waiver propagation,
+VALIDATE content checking, receipt-authority reconciliation — all under
+canonical gates and the canonical waiver validator. **Not qualified by this
+path:** model reliability or behavioral correctness.
+
+Canonical ledger: seq 158.
+
+## What this qualifies — and what remains
+
+Qualified: under F-005, a real criterion violation produces OPEN, the gate
+halts fail-closed, and the linked recovery (finding → immutable operator
+test → scoped fix → TEST containment → verified → human approval) closes
+end-to-end on live workers. Also qualified (sandbox-assisted): receipt-bound
+owner-waiver resume with no reviewer recall, the VERIFY boundary — a
+waiver does not override a VERIFY FAIL (real model judgment) — and the
+TEST boundary — a waiver does not override a real TEST failure. Finally
+(deterministic/controlled scope): VALIDATE visibility of a waived finding.
+
+**Nothing F-005 remains unqualified.** Path (c2)'s original controlled
+VERIFY-FAIL trigger stays superseded (path (b) demonstrated the property
+with a real verifier judgment).

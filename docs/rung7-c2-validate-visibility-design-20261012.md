@@ -1,8 +1,9 @@
 # Rung 7 path (c2′) — VALIDATE-visibility drill design, v2 (2026-10-12)
 
-Status: **DESIGN v2 — returned for owner authorization. Nothing staged or
-executed; no fallback execution or waiver is pre-authorized.** v2 resolves
-two owner review findings on v1:
+Status: **EXECUTED 2026-10-12 — qualified in deterministic/controlled
+scope** (lifecycle `c9049ba26f4f`, `done` at seq 22; canonical ledger seq
+158; outcome recorded in `docs/rung7-f005-qualification-20261012.md`).
+v2 resolves two owner review findings on v1:
 
 1. **v1's "legitimate OPEN" assumed its conclusion.** A raw `TypeError` on
    an out-of-contract string input is not inherently a defect — no
