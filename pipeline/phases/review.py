@@ -5,7 +5,8 @@ construction — `pxx ask` (no edit tools), input contract is ONLY the diff
 manifest, the patches, and their acceptance criteria; the model never sees
 pipeline state and the phase writes nothing but artifacts/review.md.
 Output contract is gate-enforced: one ## TASK-n section per diff, every
-issue RESOLVED or WAIVED-with-reason.
+issue RESOLVED or OPEN (F-005, owner ruling 2026-10-12: WAIVED is not a
+reviewer disposition — only the owner waives, via a ledgered receipt).
 """
 import json, os, re, subprocess, time
 from pipeline.worker import (ISOLATION_TOML_BARE, WorkerError,
@@ -125,9 +126,16 @@ def _run_pxx(target_repo, reviewer=None):
                 "self-contained: answer from the text alone. DO NOT call any "
                 "tools — no shell, no file reads. Tool use terminates the task.\n"
                 "Output ONLY finding lines, each:\n"
-                "- issue: <finding> — RESOLVED (<why it is addressed or not real>)\n"
-                "or, for accepted risk:\n"
-                "- issue: <finding> — WAIVED: <reason>\n"
+                "- issue: <finding> — RESOLVED (<why the finding is disproven, "
+                "or how the implementation satisfies the criterion AS WRITTEN>)\n"
+                "or, for a confirmed violation of the criterion that remains:\n"
+                "- issue: <finding> — OPEN: <what is wrong and why it violates "
+                "the criterion>\n"
+                "RESOLVED/OPEN are the ONLY dispositions. Absence of test "
+                "coverage is evidence scope, never conformance proof: if you "
+                "cannot confirm behavior beyond what tests cover and the "
+                "criterion requires more, the finding is OPEN. Only the "
+                "pipeline owner may waive a finding — never you.\n"
                 "If the diff satisfies the criterion with no findings, output exactly:\n"
                 "- issue: none — RESOLVED (diff satisfies the criterion)\n"
                 "--- BEGIN DIFF ---\n" + patch + "\n--- END DIFF ---\n"

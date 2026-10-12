@@ -396,6 +396,68 @@ def reconcile(artifacts_dir="artifacts"):
                 report["failures"].append(
                     f"HUMAN_GATE_BYPASSED: gate {ph} passed and the lifecycle "
                     f"advanced, but no human_approve follows its latest gate_open")
+        # 7. F-005 waiver authority: a claimed waiver must be PROVEN against
+        #    the ledger, not recorded. Every owner_waiver receipt must bind
+        #    the current lifecycle and a real attempt window (started +
+        #    gate_failed row hashes); every waived finding in a review
+        #    completion must carry a receipt; a receipt that is neither
+        #        applied nor orphaned by a re-review is an anomaly; and
+        #    waiver gate evidence without a completion is an interruption.
+        receipts = [r for r in lc_rows
+                    if r.get("phase") == "review"
+                    and r.get("event") == "owner_waiver"]
+        completions = [r for r in lc_rows
+                       if r.get("phase") == "review"
+                       and r.get("event") == "complete"]
+        applied = set()
+        for c in completions:
+            applied |= set((c.get("detail") or {}).get("waived_findings") or [])
+        started_hashes = {r.get("hash") for r in lc_rows
+                          if r.get("phase") == "review"
+                          and r.get("event") == "started"}
+        failed_rows = {r.get("hash"): r for r in lc_rows
+                       if r.get("phase") == "review"
+                       and r.get("event") == "gate_failed"}
+        for r in receipts:
+            d = r.get("detail") or {}
+            rid = (r.get("hash") or "?")[:16]
+            if cur_lc and d.get("lifecycle_id") and d["lifecycle_id"] != cur_lc:
+                report["failures"].append(
+                    f"WAIVER_AUTHORITY: receipt {rid}… binds lifecycle "
+                    f"{d['lifecycle_id']} — not the current {cur_lc}")
+            if (d.get("attempt_started_hash") not in started_hashes
+                    or d.get("attempt_failed_hash") not in failed_rows):
+                report["failures"].append(
+                    f"WAIVER_AUTHORITY: receipt {rid}… attempt binding matches "
+                    f"no review started/gate_failed row — stale or foreign")
+            fh = d.get("finding_sha256")
+            if fh in applied:
+                continue
+            bound_fail = failed_rows.get(d.get("attempt_failed_hash"))
+            orphaned = bound_fail is not None and any(
+                x.get("seq", -1) > bound_fail.get("seq", -1)
+                for x in lc_rows
+                if x.get("phase") == "review" and x.get("event") == "started")
+            if not orphaned:
+                report["failures"].append(
+                    f"WAIVER_NOT_APPLIED: receipt {rid}… is neither applied to "
+                    f"a review completion nor orphaned by a re-review")
+        for c in completions:
+            for fh in (c.get("detail") or {}).get("waived_findings") or []:
+                if not any((r.get("detail") or {}).get("finding_sha256") == fh
+                           for r in receipts):
+                    report["failures"].append(
+                        f"WAIVER_MISSING: review completion waives finding "
+                        f"{str(fh)[:16]}… with no owner_waiver receipt — "
+                        f"authorization unproven")
+        waiver_pass = [g for g in gates
+                       if g.get("phase") == "review"
+                       and g.get("gate_result") == "pass"
+                       and "waived_findings" in (g.get("detail") or "")]
+        if waiver_pass and not completions:
+            report["failures"].append(
+                "WAIVER_INCOMPLETE: waiver gate evidence emitted but the "
+                "review completion never landed (interruption)")
     report["checks"] = {"declared_real_phases": sorted(p for p, k in declared.items()
                                                        if k != "mock"),
                         "worker_calls": len(calls), "gate_records": len(gates),

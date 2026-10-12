@@ -1,5 +1,5 @@
 """Gates are pure functions: artifact in -> verdict out. No side effects."""
-import json, os, re
+import hashlib, json, os, re
 from pipeline.validate import validate as _validate, load as _load, ValidationError
 
 CONTRACTS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "contracts")
@@ -76,20 +76,73 @@ def gate_diff(m="artifacts/diff/manifest.json", plan="artifacts/plan.json"):
             raise GateError(f"missing diff file: {d['path']}")
     return True
 
-def gate_review(r="artifacts/review.md", m="artifacts/diff/manifest.json"):
-    """Strict grammar, not substring heuristics (H-2/ADV-004/ADV-005):
-    - section headers are exact, anchored '## TASK-n' lines ('## TASK-10'
-      never satisfies TASK-1);
+def parse_findings(txt):
+    """The ONE review-findings parser, shared by gate_review and the waiver
+    CLI (owner ruling 2026-10-04: one implementation, never two). Returns a
+    list of {"task", "normalized", "disposition", "reason"} in document
+    order. Raises GateError on ANY malformed content — parsing is pure and
+    fail-closed regardless of waivers (F-005):
+    - '## TASK-n' section headers are exact; a duplicate section or an issue
+      line outside any section fails;
     - any issue-like line must parse as one finding with an enum disposition
-      and a non-empty reason: '— RESOLVED (<reason>)' or '— WAIVED: <reason>';
-      the disposition TOKEN is case-insensitive (owner ruling 2026-10-06:
-      casing carries no semantic safety property — the controls are the
-      vocabulary, the required reason, complete coverage, and fail-closed
-      parsing; the parsed disposition is canonicalized to RESOLVED/WAIVED and
-      review.md is never rewritten); OPEN, negated, empty-reason, wrapped,
-      or misformatted lines all fail;
-    - mechanical import-resolution contradictions fail the gate DIRECTLY from
-      the machine-written mechanical.json — worker text never mediates them."""
+      and a non-empty reason: '— RESOLVED (<reason>)' or '— OPEN: <reason>';
+      the disposition TOKEN is case-insensitive (owner ruling 2026-10-06);
+    - WAIVED is NOT a reviewer disposition (owner ruling 2026-10-12): only
+      Chris may waive a finding, via a ledgered receipt — a WAIVED line is
+      malformed and fails the parse.
+    'normalized' is the canonical finding line exactly as parsed (bullet
+    stripped); it — not the raw text — is what finding_sha256 binds."""
+    findings = []
+    current = None
+    seen = set()
+    for line in txt.splitlines():
+        st = line.strip()
+        if re.fullmatch(r"##\s+TASK-\d+", st):
+            if st in seen:
+                raise GateError(f"duplicate review section: {st}")
+            seen.add(st)
+            current = re.sub(r"^##\s+", "", st)
+            continue
+        s = re.sub(r"^(?:[-*•]|\d+\.)\s*", "", st)  # any bullet style
+        if not re.match(r"(?i)issues?:", s):
+            continue
+        if not s.startswith("issue:"):
+            raise GateError(f"malformed issue line (case/format): {st[:70]}")
+        if current is None:
+            raise GateError(f"finding outside any task section: {st[:70]}")
+        if re.search(r"—\s*WAIVED\b", s, re.IGNORECASE):
+            raise GateError(
+                "WAIVED is not a reviewer disposition (F-005) — only the "
+                "owner may waive a finding, via 'python -m pipeline.approvals "
+                f"review waive': {s[:70]}")
+        disp = re.search(r"\s—\s(?:RESOLVED \(([^)]*)\)|OPEN: (.*\S))\s*$",
+                         s, re.IGNORECASE)
+        if not disp:
+            raise GateError(f"unresolved review issue: {s[:70]}")
+        if disp.group(1) is not None and not disp.group(1).strip():
+            raise GateError(f"RESOLVED without a reason: {s[:70]}")
+        findings.append({
+            "task": current,
+            "normalized": s,
+            "disposition": "RESOLVED" if disp.group(1) is not None else "OPEN",
+            "reason": (disp.group(1) if disp.group(1) is not None
+                       else disp.group(2)).strip()})
+    return findings
+
+def finding_sha256(task, normalized):
+    """F-005 finding identity: sha256 of task id + the complete normalized
+    finding line (disposition and reason included) — sensitive to any edit
+    of any component."""
+    return hashlib.sha256(f"{task}\n{normalized}".encode()).hexdigest()
+
+def gate_review(r="artifacts/review.md", m="artifacts/diff/manifest.json",
+                waivers=None):
+    """Strict grammar via parse_findings (H-2/ADV-004/ADV-005). OPEN halts
+    REVIEW unless the runner supplies a verified owner-waiver receipt whose
+    finding_sha256 matches (F-005, owner ruling 2026-10-12); receipts are an
+    INPUT — the gate never reads the ledger, and malformed output is never
+    rescued by a receipt. Mechanical import-resolution contradictions fail
+    the gate DIRECTLY from the machine-written mechanical.json."""
     txt = open(r).read() if os.path.exists(r) else ""
     if not txt.strip():
         raise GateError("missing/empty review.md")
@@ -98,23 +151,20 @@ def gate_review(r="artifacts/review.md", m="artifacts/diff/manifest.json"):
     for d in _read(m)["diffs"]:
         if f"## {d['task']}" not in sections:
             raise GateError(f"review missing section for {d['task']}")
-    for line in txt.splitlines():
-        s = re.sub(r"^(?:[-*•]|\d+\.)\s*", "", line.strip())  # any bullet style
-        if not re.match(r"(?i)issues?:", s):
+    findings = parse_findings(txt)
+    waiver_map = {w["finding_sha256"]: w for w in (waivers or [])}
+    open_hashes = set()
+    for f in findings:
+        if f["disposition"] != "OPEN":
             continue
-        if not s.startswith("issue:"):
-            raise GateError(f"malformed issue line (case/format): {line.strip()[:70]}")
-        # Disposition token is case-insensitive (owner ruling 2026-10-06);
-        # the match position determines the canonical disposition:
-        # group 1 -> RESOLVED, group 2 -> WAIVED, group 3 -> OPEN.
-        disp = re.search(r"\s—\s(?:RESOLVED \(([^)]*)\)|WAIVED: (.*\S)|OPEN: (.*))$",
-                         s, re.IGNORECASE)
-        if not disp:
-            raise GateError(f"unresolved review issue: {s[:70]}")
-        if disp.group(1) is not None and not disp.group(1).strip():
-            raise GateError(f"RESOLVED without a reason: {s[:70]}")
-        if disp.group(3) is not None:
-            raise GateError(f"explicitly OPEN issue: {s[:70]}")
+        h = finding_sha256(f["task"], f["normalized"])
+        open_hashes.add(h)
+        if h not in waiver_map:
+            raise GateError(f"explicitly OPEN issue: {f['normalized'][:70]}")
+    for h in waiver_map:
+        if h not in open_hashes:
+            raise GateError(f"waiver receipt {h[:16]}… does not match any "
+                            f"OPEN finding in {r} — orphan or forgery")
     import glob
     for p in sorted(glob.glob("artifacts/diff/*.mechanical.json")):
         d = json.load(open(p))
@@ -240,8 +290,52 @@ def gate_verify(v="artifacts/verification.md", intake="artifacts/intake.json"):
         raise GateError("## Limitations section is empty or perfunctory")
     return True
 
-def gate_validate(v="artifacts/validation.md"):
+def gate_validate(v="artifacts/validation.md", waivers=None):
+    """SIGN-OFF block required. F-005: the '## Owner waivers' section is
+    content-checked against the verified receipt inventory supplied by the
+    RUNNER (the gate never reads the ledger): every applied waiver must be
+    listed with its exact task, finding hash, receipt row hash, and reason —
+    omitted, extra, or altered entries fail. 'None' is valid only when the
+    inventory is empty."""
     txt = open(v).read() if os.path.exists(v) else ""
     if not txt.strip() or "SIGN-OFF:" not in txt:
         raise GateError("validation.md missing SIGN-OFF block")
+    if "## Owner waivers" not in txt:
+        raise GateError("validation.md lacks a '## Owner waivers' section")
+    section = txt.split("## Owner waivers", 1)[1].split("\n## ", 1)[0]
+    entries = []
+    cur = None
+    for line in section.splitlines():
+        m = re.match(r"- task: (TASK-\d+)\s*$", line.strip())
+        if m:
+            cur = {"task_id": m.group(1)}
+            entries.append(cur)
+            continue
+        m = re.match(r"(finding_sha256|receipt|reason): (.*\S)\s*$",
+                     line.strip())
+        if m and cur is not None:
+            cur[m.group(1)] = m.group(2)
+    inventory = {(w["task_id"], w["finding_sha256"], w["receipt_hash"],
+                  w["reason"]) for w in (waivers or [])}
+    documented = {(e.get("task_id"), e.get("finding_sha256"),
+                   e.get("receipt"), e.get("reason"))
+                  for e in entries}
+    has_none = any(l.strip() == "- None" for l in section.splitlines())
+    if not inventory:
+        if entries or not has_none:
+            raise GateError("no owner waivers are recorded for this "
+                            "lifecycle, but the Owner waivers section does "
+                            "not say exactly '- None'")
+        return True
+    if has_none:
+        raise GateError("owner waivers were applied but the section claims "
+                        "'- None' — omitted waiver visibility")
+    if documented != inventory:
+        raise GateError(
+            "Owner waivers section does not match the verified receipt "
+            f"inventory (missing from document: "
+            f"{sorted((t or '?') for t, *_ in inventory - documented)}; "
+            f"not in inventory: "
+            f"{sorted((t or '?') for t, *_ in documented - inventory)}) — "
+            "omitted, extra, or altered waiver entries")
     return True

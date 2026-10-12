@@ -31,9 +31,14 @@ def _last_artifact(rows, phase):
 def _assert_artifact_unchanged(rows, phase):
     """Every recorded artifact hash for a completed phase (complete, gate_open,
     human_approve) must match the bytes on disk right now. A drifted artifact
-    means the gate/approval was earned on other content — refuse to resume."""
+    means the gate/approval was earned on other content — refuse to resume.
+    F-005: failed-attempt hashes (gate_failed rows, which now bind the failed
+    bytes for waiver attachment) are EXCLUDED — failed attempts may be
+    superseded by the operator-driven rerun path; only completed evidence is
+    immutable."""
     recorded = [r["detail"]["artifact_sha256"] for r in rows
                 if r["phase"] == phase
+                and r["event"] in ("complete", "gate_open", "human_approve")
                 and isinstance(r.get("detail"), dict)
                 and r["detail"].get("artifact_sha256")]
     if not recorded:
@@ -55,6 +60,108 @@ def _assert_artifact_unchanged(rows, phase):
 
 ORDER = ["intake", "plan", "code", "review", "test", "verify", "validate"]
 HUMAN_GATES = {"intake", "plan", "validate"}
+
+def _review_failed_window(rows):
+    """The open REVIEW failure window (F-005), or None. A window exists when
+    the latest review attempt ended in gate_failed with no later completion:
+    (last_started_row, gate_failed_row, receipts_after_failure). A later
+    'started' row opens a NEW window and orphans earlier receipts by
+    construction (they bind the old attempt's row hashes)."""
+    rev = [r for r in rows if r["phase"] == "review"]
+    started = [r for r in rev if r["event"] == "started"]
+    if not started:
+        return None
+    last_start = started[-1]
+    window = [r for r in rev if r.get("seq", -1) > last_start.get("seq", -1)]
+    fails = [r for r in window if r["event"] == "gate_failed"]
+    if not fails or any(r["event"] == "complete" for r in window):
+        return None
+    fail = fails[-1]
+    receipts = [r for r in window
+                if r["event"] == "owner_waiver"
+                and r.get("seq", -1) > fail.get("seq", -1)]
+    return last_start, fail, receipts
+
+def _waiver_resume(rows):
+    """F-005: with owner-waiver receipts in the open failure window, resume
+    REVIEW WITHOUT another reviewer call — re-evaluate the preserved
+    review.md against the verified receipts. Returns True when handled.
+    No receipts -> None (the owner-driven fresh-reviewer rerun is unchanged).
+    Receipts present but not exactly covering the OPEN findings -> loud
+    refusal (complete the waivers or start a linked recovery)."""
+    from pipeline import envelope
+    win = _review_failed_window(rows)
+    if not win:
+        return None
+    last_start, fail, receipts = win
+    if not receipts:
+        return None
+    lc = state.lifecycle()["id"]
+    if not os.path.exists("artifacts/review.md"):
+        raise gates.GateError("review waiver-resume: artifacts/review.md is "
+                              "missing — the preserved artifact is required")
+    review_h = _sha256_file("artifacts/review.md")
+    manifest_h = (_sha256_file("artifacts/diff/manifest.json")
+                  if os.path.exists("artifacts/diff/manifest.json") else None)
+    for r in receipts:
+        d = r.get("detail") or {}
+        rid = (r.get("hash") or "?")[:16]
+        if d.get("lifecycle_id") != lc:
+            raise gates.GateError(f"waiver receipt {rid}… binds lifecycle "
+                                  f"{d.get('lifecycle_id')} — not current {lc}")
+        if (d.get("attempt_started_hash") != last_start.get("hash")
+                or d.get("attempt_failed_hash") != fail.get("hash")):
+            raise gates.GateError(f"waiver receipt {rid}… is bound to a "
+                                  f"superseded review attempt — orphaned")
+        if d.get("review_md_sha256") != review_h:
+            raise gates.GateError(f"waiver receipt {rid}… binds review.md "
+                                  f"bytes that differ from disk — drifted")
+        if manifest_h and d.get("diff_manifest_sha256") != manifest_h:
+            raise gates.GateError(f"waiver receipt {rid}… binds a diff "
+                                  f"manifest that differs from disk — drifted")
+    findings = gates.parse_findings(open("artifacts/review.md").read())
+    open_map = {gates.finding_sha256(f["task"], f["normalized"])
+                for f in findings if f["disposition"] == "OPEN"}
+    covered = {r["detail"]["finding_sha256"] for r in receipts}
+    if covered != open_map:
+        raise gates.GateError(
+            "owner waivers do not exactly cover the OPEN findings "
+            f"(uncovered: {sorted(h[:12] for h in open_map - covered)}; "
+            f"stray: {sorted(h[:12] for h in covered - open_map)}) — "
+            "complete the waivers or start a linked recovery")
+    gates.gate_review(waivers=[r["detail"] for r in receipts])
+    waived = sorted(covered)
+    envelope.emit_gate("review", "pass",
+                       detail="owner-waiver resume (F-005); "
+                              "waived_findings=" + ",".join(waived))
+    state.emit("review", "complete", artifact="artifacts/review.md",
+               detail={**(_hash_detail("artifacts/review.md") or {}),
+                       "waived_findings": waived,
+                       "waiver_receipts": sorted(r.get("hash")
+                                                 for r in receipts)})
+    return True
+
+def _applied_waivers(rows):
+    """Owner-waiver receipts APPLIED to the current lifecycle's review
+    completion (F-005): finding listed in the completion's waived_findings
+    and bound to the completed review.md bytes. This verified inventory is
+    what the validate gate content-checks against."""
+    comp = [r for r in rows if r["phase"] == "review" and r["event"] == "complete"]
+    waived, art_hash = set(), None
+    for r in comp:
+        d = r.get("detail") or {}
+        waived |= set(d.get("waived_findings") or [])
+        if d.get("artifact_sha256"):
+            art_hash = d["artifact_sha256"]
+    out = []
+    for r in rows:
+        if r.get("phase") == "review" and r.get("event") == "owner_waiver":
+            d = r.get("detail") or {}
+            if (d.get("finding_sha256") in waived
+                    and d.get("review_md_sha256") == art_hash):
+                out.append({**d, "receipt_hash": r.get("hash")})
+    return out
+
 GATE = {
     "intake": gates.gate_intake,
     "plan": gates.gate_plan,
@@ -127,6 +234,11 @@ def run_all(workers=None, stop_after=None):
                                    detail=_hash_detail(_last_artifact(rows, phase)))
                     return f"gate_open:{phase}"
             continue
+        # F-005: owner-waiver resume — receipts in an open REVIEW failure
+        # window re-evaluate the preserved artifact WITHOUT a reviewer call.
+        if phase == "review" and _waiver_resume(rows):
+            rows = state.lifecycle_rows()
+            continue
         # Lifecycle identity (owner ruling F-08): established at intake started,
         # carried on every subsequent row by state.emit.
         detail = None
@@ -143,13 +255,24 @@ def run_all(workers=None, stop_after=None):
                 "error_type": type(e).__name__, "error": str(e)[:500]})
             raise
         try:
-            GATE[phase]()
+            if phase == "validate":
+                # F-005: the validate gate content-checks the document's
+                # Owner waivers section against the verified receipt
+                # inventory (runner-derived — the gate stays pure).
+                GATE[phase](waivers=_applied_waivers(state.lifecycle_rows()))
+            else:
+                GATE[phase]()
         except gates.GateError as e:
             # Ledger FIRST — the gate_failed row is authoritative; an envelope
             # emission failure must never suppress it (owner find 2026-10-04).
             # The gate failure still surfaces as GateError, with any envelope
-            # failure chained as its cause.
-            state.emit(phase, "gate_failed", detail={"error": str(e)})
+            # failure chained as its cause. F-005: review failures bind the
+            # failed artifact's bytes so owner waivers can attach to exactly
+            # the evidence the gate rejected.
+            detail = {"error": str(e)}
+            if phase == "review" and os.path.exists("artifacts/review.md"):
+                detail.update(_hash_detail("artifacts/review.md") or {})
+            state.emit(phase, "gate_failed", detail=detail)
             try:
                 envelope.emit_gate(phase, "fail", str(e))
             except envelope.EnvelopeError as ee:

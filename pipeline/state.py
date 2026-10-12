@@ -22,7 +22,9 @@ append an event="correction" row whose detail names the erroneous row's hash.
 
 emit() holds an exclusive flock across the whole
 read/sequence/hash/append/fsync transaction (POSIX; the orchestrator hosts
-are macOS/Linux).
+are macOS/Linux). transact() (F-005) extends the same lock across
+precondition verification: verify(rows) runs between the locked read and
+the append, so validation and write are one serialized transaction.
 """
 import fcntl, hashlib, json, os, time, uuid
 
@@ -131,10 +133,25 @@ def _seal_errors(rows):
     return errors
 
 def emit(phase, event, artifact=None, detail=None, ledger=LEDGER):
+    return transact(phase, event, artifact=artifact, detail=detail,
+                    ledger=ledger)
+
+def transact(phase, event, artifact=None, detail=None, verify=None,
+             ledger=LEDGER):
+    """emit() with preconditions under the SAME exclusive flock (F-005):
+    verify(rows) runs after the locked read and before the append — a
+    refusing verify raises and nothing is written, so validation and append
+    are one serialized transaction (read-check-write races between competing
+    waiver/rerun operations are impossible). detail may be a callable taking
+    the locked rows, for bindings computed against settled state."""
     with open(ledger, "a+") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         f.seek(0)
         rows = [json.loads(l) for l in f if l.strip()]
+        if verify is not None:
+            verify(rows)
+        if callable(detail):
+            detail = detail(rows)
         prev = rows[-1].get("hash") or row_hash(rows[-1]) if rows else GENESIS_PREV
         lc = (detail or {}).get("lifecycle_id") or _lifecycle_from(rows)
         rec = {"seq": len(rows), "ts": _now(), "run_id": RUN_ID,

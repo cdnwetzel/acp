@@ -96,7 +96,7 @@ python3 -m pipeline.approvals <gate> approve|deny "reason"
 # gates: intake | plan | validate
 ```
 
-**Current test status (2026-10-11): 317 passed, 0 failed**
+**Current test status (2026-10-12): 345 passed, 0 failed**
 (`python3 -m pytest tests/ -q`). C6 (2026-10-03) landed hash-chaining;
 the 2026-10-04 repair program added the legacy-prefix seal (row 78),
 lifecycle identity, hash-bound approvals, strict gate parsers, envelope
@@ -191,10 +191,25 @@ review.md — corroborating, not independent); human VALIDATE DENIED at seq 20
 lifecycle `b221b9f1b029`: finding encoded as an immutable operator-seeded
 test, canonical unpatched runner, one-task `num.py` remediation; CODE
 `9744b0d` fixed the defect, TEST 3 passed, VERIFY PASS with substantive
-Limitations, VALIDATE approved, `done` at seq 20, reconcile 0 failures. Open
-question carried forward: REVIEW disposition semantics — whether WAIVED may
-rest on test coverage when a criterion states a general behavioral
-requirement (contract-policy decision, parked for owner).
+Limitations, VALIDATE approved, `done` at seq 20, reconcile 0 failures.
+
+2026-10-12: **F-005 owner ruling + implementation** — REVIEW disposition
+semantics settled: reviewer vocabulary is RESOLVED/OPEN only (WAIVED is
+malformed by construction — the rung-6 coverage excuse is now a parse
+failure); OPEN halts REVIEW; only Chris waives, per-finding, via
+`python3 -m pipeline.approvals review waive <TASK-n> <selector> "<reason>"`
+— a ledgered `owner_waiver` receipt bound to lifecycle, review attempt
+(started/gate_failed row hashes), review.md + diff-manifest bytes, and the
+finding hash (task + normalized line). Waiver resume re-evaluates the
+preserved artifact with NO reviewer recall; receipts are serialized under
+one ledger lock (`state.transact`), never transfer across attempts, and are
+content-checked into `validation.md`'s `## Owner waivers` section;
+reconciliation proves waiver authority (WAIVER_MISSING / WAIVER_AUTHORITY /
+WAIVER_NOT_APPLIED / WAIVER_INCOMPLETE). A waiver never overrides a later
+TEST/VERIFY failure. Failed-attempt hashes no longer block re-review
+(`_assert_artifact_unchanged` scopes to complete/gate_open/human_approve).
+Plan: `docs/f005-owner-waiver-amendment-20261012.md` (v2, `8762f50`).
+Rung-7 qualification (both waiver paths) remains SEPARATELY authorized.
 
 Endpoint topology rule (owner decision 2026-10-08): the repo manifest's
 `lan`-class entries are canonical — they reflect the declared HOME-fleet

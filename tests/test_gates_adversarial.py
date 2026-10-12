@@ -26,19 +26,21 @@ def _review(txt):
 def test_review_strict_grammar_accepts_compliant(tmp_path, monkeypatch):
     _setup(tmp_path, monkeypatch)
     assert _review("## TASK-1\n- issue: minor naming — RESOLVED (renamed)\n"
-                   "- issue: perf — WAIVED: out of scope per plan\n")
+                   "- issue: perf — RESOLVED (criterion scopes perf out)\n")
 
 def test_review_disposition_token_is_case_insensitive(tmp_path, monkeypatch):
     """Owner ruling 2026-10-06: casing carries no semantic safety property.
     Case variants of the disposition token pass with structure and non-empty
-    reason intact; the parsed disposition canonicalizes to RESOLVED/WAIVED."""
+    reason intact. F-005 (owner ruling 2026-10-12): the reviewer vocabulary
+    is RESOLVED/OPEN only — WAIVED is malformed at ANY casing."""
     _setup(tmp_path, monkeypatch, tasks=("TASK-1", "TASK-2", "TASK-3"))
     assert _review("## TASK-1\n- issue: none — RESOLVED (diff satisfies the criterion)\n"
                    "## TASK-2\n- issue: none — RESolved (diff satisfies the criterion)\n"
                    "## TASK-3\n- issue: none — resolved (diff satisfies the criterion)\n")
     _setup(tmp_path, monkeypatch)
-    assert _review("## TASK-1\n- issue: perf — Waived: out of scope per plan\n"
-                   "- issue: style — waived: cosmetic only\n")
+    for waived in ("WAIVED", "Waived", "waived"):
+        with pytest.raises(gates.GateError, match="not a reviewer disposition"):
+            _review(f"## TASK-1\n- issue: perf — {waived}: out of scope per plan\n")
 
 @pytest.mark.parametrize("bad", [
     "- issue: plaintext password — NOT RESOLVED, still open",   # G1a
@@ -50,6 +52,8 @@ def test_review_disposition_token_is_case_insensitive(tmp_path, monkeypatch):
     "1. issue: numbered bullet",                                # numbered variant
     "- issue: explicitly open — OPEN: needs owner",             # OPEN is unresolved
     "- issue: explicitly open — open: needs owner",             # OPEN, any casing
+    "- issue: perf — WAIVED: out of scope per plan",            # F-005: rung-6 class
+    "- issue: perf — waived: not covered by the acceptance tests",  # F-005 rung-6 verbatim
 ])
 def test_review_rejects_near_misses(tmp_path, monkeypatch, bad):
     _setup(tmp_path, monkeypatch)

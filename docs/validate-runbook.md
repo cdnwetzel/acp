@@ -98,8 +98,15 @@ Before the decision, the agent assembles and the operator verifies:
 4. `verification.md`: every acceptance criterion traced byte-for-byte with a
    PASS verdict; `## Limitations` section substantive (≥20 chars is the gate
    floor — the human judges adequacy).
-5. `review.md`: no unresolved `- issue:` lines (RESOLVED/WAIVED only, and
-   WAIVED entries carry a named reason).
+5. `review.md`: no unresolved `- issue:` lines (RESOLVED only — OPEN halts
+   REVIEW; F-005). An OPEN finding advances only with a per-finding owner
+   waiver receipt: `python3 -m pipeline.approvals review waive <TASK-n>
+   <selector> "<reason>"` (selector = 1-based OPEN-finding index or ≥8-char
+   finding-hash prefix; the receipt binds lifecycle, review attempt,
+   review.md and diff-manifest bytes, and the finding hash; irreversible;
+   a re-review orphans it). Applied waivers appear content-checked in
+   `validation.md`'s `## Owner waivers` section — review them there. A
+   waiver never overrides a later TEST failure or VERIFY FAIL.
 6. Envelope: one `worker_call` record per real worker invocation, redacted
    command field (`<prompt_sha256:…>`), hashes only — no prompt bodies, no
    diffs, no secrets.
