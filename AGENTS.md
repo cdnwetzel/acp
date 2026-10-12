@@ -96,7 +96,7 @@ python3 -m pipeline.approvals <gate> approve|deny "reason"
 # gates: intake | plan | validate
 ```
 
-**Current test status (2026-10-11): 315 passed, 0 failed**
+**Current test status (2026-10-11): 317 passed, 0 failed**
 (`python3 -m pytest tests/ -q`). C6 (2026-10-03) landed hash-chaining;
 the 2026-10-04 repair program added the legacy-prefix seal (row 78),
 lifecycle identity, hash-bound approvals, strict gate parsers, envelope
@@ -574,10 +574,13 @@ in-repo at `docs/evidence/review-20261004/`.
   hardened `a5d137d` (`extract_pxx_session`); (P2) REVIEW/VERIFY outer
   subprocess timeout — mechanism RESOLVED `775cd85`, policy unified
   2026-10-10 (`a6b7e5c`, `b051846`: one named budget 600s + derived 60s
-  margin = 660s across all ask call sites, F-002). Remaining open
-  limitation: the audit fixture is synthetic — captured-real-audit
-  provenance is F-004, OPEN; receipts remain operational evidence, not yet
-  production-grade, until it closes.
+  margin = 660s across all ask call sites, F-002). F-004 RESOLVED
+  2026-10-11: real captured audit stream committed as
+  `tests/fixtures/pxx-audit-real.jsonl` + `.head` (pxx-orchestrator 2.7.0
+  installed from PyPI, isolated XDG_STATE_HOME genesis chain, 12 records /
+  2 sessions — bare+structured and default contrast; provenance in
+  `tests/fixtures/pxx-audit-real.PROVENANCE.txt`); synthetic fixture
+  retained, both verify through `_verify_pxx_audit` (regression-pinned).
 - **Mechanical pre-write checks pattern**: phases validate machine
   contracts BEFORE writing artifacts; gates re-check after. Instances:
   PLAN 1:1 criteria check (ghost-task class), VERIFY verbatim

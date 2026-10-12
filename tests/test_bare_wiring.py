@@ -195,6 +195,58 @@ def test_payload_receipt_rejects_tampered_audit_head(tmp_path):
     with pytest.raises(w.WorkerError, match="audit verification failed"):
         w.payload_receipt(BARE_SESSION, str(state_dir / "pxx"))
 
+# ------------------------------------- real captured audit fixture (F-004)
+
+# REAL pxx audit stream: captured 2026-10-11 under an isolated
+# XDG_STATE_HOME (genesis chain), produced by pxx-orchestrator 2.7.0
+# installed FROM PYPI. Provenance: fixtures/pxx-audit-real.PROVENANCE.txt.
+# The synthetic fixture above is RETAINED — both verify through the same
+# _verify_pxx_audit chain + .head logic.
+REAL_FIXTURE = os.path.join(os.path.dirname(__file__), "fixtures",
+                            "pxx-audit-real.jsonl")
+REAL_BARE_SESSION = "0fe6f40854f2"     # bare ask + --response-format
+REAL_DEFAULT_SESSION = "3038052bd905"  # default agentic ask (contrast)
+REAL_SCHEMA_SHA256 = ("44f04513548bb6d180b1d6631b99870eea577fe97597612f"
+                      "a73778eac53a0be0")
+
+
+def _install_real_fixture(tmp_path):
+    """Real fixture under a tmp state dir at today's date name."""
+    state_dir = tmp_path / "xstate"
+    audit = state_dir / "pxx" / "audit"
+    audit.mkdir(parents=True)
+    day = datetime.date.today().isoformat()
+    shutil.copy(REAL_FIXTURE, audit / f"{day}.jsonl")
+    shutil.copy(REAL_FIXTURE.replace(".jsonl", ".head"),
+                audit / f"{day}.head")
+    return str(state_dir / "pxx")
+
+
+def test_real_audit_fixture_chain_and_head_verify():
+    # Both fixtures — synthetic (retained) and real (F-004) — pass the same
+    # chain + .head verification.
+    w._verify_pxx_audit(FIXTURE)
+    w._verify_pxx_audit(REAL_FIXTURE)
+
+
+def test_payload_receipt_real_fixture_structured_stamps(tmp_path):
+    # The real capture carries the pxx >= 2.7.0 structured-output stamps on
+    # the bare session and the default-shape contrast on the other.
+    state_dir = _install_real_fixture(tmp_path)
+    bare = w.payload_receipt(REAL_BARE_SESSION, state_dir)
+    assert bare == {"payload_mode": "bare", "system_message_present": False,
+                    "tools_key_present": False, "tool_count": 0,
+                    "response_format_present": True,
+                    "response_format_sha256": REAL_SCHEMA_SHA256,
+                    "json_schema_name": "f004_capture_v1"}
+    default = w.payload_receipt(REAL_DEFAULT_SESSION, state_dir)
+    assert default == {"payload_mode": "default",
+                       "system_message_present": True,
+                       "tools_key_present": True, "tool_count": 9,
+                       "response_format_present": False,
+                       "response_format_sha256": None,
+                       "json_schema_name": None}
+
 # ------------------------------------------------- default payload evidence
 
 DEFAULT_OUTCOME_LINE = ("[COMPLETED] OK (rounds=2 tokens=120 diff_lines=40 "
