@@ -96,7 +96,7 @@ python3 -m pipeline.approvals <gate> approve|deny "reason"
 # gates: intake | plan | validate
 ```
 
-**Current test status (2026-10-10): 304 passed, 0 failed**
+**Current test status (2026-10-11): 315 passed, 0 failed**
 (`python3 -m pytest tests/ -q`). C6 (2026-10-03) landed hash-chaining;
 the 2026-10-04 repair program added the legacy-prefix seal (row 78),
 lifecycle identity, hash-bound approvals, strict gate parsers, envelope
@@ -159,8 +159,26 @@ copied bullet prefix (prompt presentation defect, fixed), attempt 2
 fail-closed post-write at gate_verify on a spurious fourth FAIL row (1:1
 row check added), attempt 3 GREEN — byte-exact PASS row, honest
 limitations, clean envelope record (observed bare + schema sha match).
-F-001 closure is the owner's call; the closure bar's probe and drill items
-are met.
+
+2026-10-11: **F-001 RESOLVED in drill scope** (owner ruling, ledger row 148 —
+all three drill attempts recorded; limitation: closure bar met on one
+conformant structured sample, no variance measured). **Rung 5 then qualified
+structured VERIFY end-to-end in a full lifecycle on the final repair stack**
+(ledger row 149; sandbox `/tmp/acp-rung5-20261011-fixed`, lifecycle
+`9e1eeb2f5e72`, seq 0–22, chain valid, reconcile 0 failures): immutable
+operator-seeded tests + implementation-only CODE scopes (owner ruling — the
+first rung-5 intake was DENIED for worker-authored-test scope drift and is
+preserved at `/tmp/acp-rung5-20261010`, seq 3). REVIEW (gpt-oss:20b) stopped
+fail-closed at seq 11 on a 600s timeout — root cause: the Asrock
+faithfulness verifier-service (T5810 `/verify` traffic) held qwen2.5:14b
+busy, and Ollama will not evict a busy model, so the gpt-oss load queued to
+the budget. Owner stopped the service (quiet window), and the resume ran
+green to `done`. Quiet-box swap timings (`swap-timing.log`): gpt-oss cold
+load via :11435 = 11.0s; reverse swap inside VERIFY = ~20s overhead (28.5s
+all-in vs ~6s warm). **Asrock GPU tenancy: coordination is the validated
+procedure** (verifier-service stop/start = the quiet-window control);
+verifier-judge relocation to T5810 REJECTED (model locked, in use); hardware
+ruled out. See gaps_and_risks.md §3.4.
 
 Endpoint topology rule (owner decision 2026-10-08): the repo manifest's
 `lan`-class entries are canonical — they reflect the declared HOME-fleet
@@ -255,9 +273,10 @@ whose context reality is governed by live probes, not this table:
 | Orchestrator + ledger | Python stdlib | Mac mini M4 |
 | ACP self-test / CI | pytest + mock workers | NUC11 |
 | Intake / Plan | folded (D4): governed proxy :8004 → vLLM :8007; :8003 retired | T5810 |
-| Code / Review | Qwen3.8-27B-FP8 via :8004 proxy → :8007 | T5810 pool |
+| Code | Qwen3.8-27B-FP8 via :8004 proxy (governed) | T5810 pool |
+| Review | gpt-oss:20b via supervised :11435 forward → Ollama (adopted 2026-10-08) | Asrock |
 | Test | pytest/build | Node under test; ACP scaffold on NUC11 |
-| Verify / judge | qwen2.5:14b verifier :8007 | Asrock |
+| Verify / judge | qwen2.5:14b via Ollama :11434 (:8007 probed unusable — fallback ledgered) | Asrock |
 | Retrieval | embed :8005 (loopback), canonical rerank :8006 (D2, loopback), Qdrant :6333 (LAN-exposed; D3 nftables hardening pending) | T5810; Asrock :8006 secondary |
 | Second-opinion review | Ollama qwen3:4b (D1; bring-up staged) | 3700X node |
 | Watchdog / alerting | gateB_loop.py + psoperator (probe-verified; NOT brothers-keeper) | Jetson Orin Nano |

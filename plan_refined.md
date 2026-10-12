@@ -47,6 +47,16 @@ GPU hosts run inference only — no pxx on T5810/Asrock/3700X/Jetson.
    shared hosts (cwdotcom lives on the Mac mini). Resource claims in this
    plan are scoped to what probes showed free; any conflict escalates
    rather than contends.
+3a. **Asrock GPU tenancy (validated 2026-10-11, rung 5 / ledger 149).**
+   REVIEW (gpt-oss:20b) and VERIFY (qwen2.5:14b) cannot co-reside in 16.3
+   GiB, and the faithfulness verifier-service is a third tenant whose
+   activity blocks Ollama eviction. Current procedure = **coordination**:
+   owner stops verifier-service for the lifecycle window; quiet-box swaps
+   measured at ~11s (gpt-oss cold) and ~20s (reverse, inside VERIFY).
+   Limitation: the window is manual; a mid-lifecycle verifier restart
+   re-creates the fail-closed REVIEW timeout (600s budget, unchanged).
+   T5810 relocation of the judge REJECTED (model locked, in use); second
+   GPU ruled out. Details: gaps_and_risks.md §3.4.
 4. Verification is the binding constraint (`output = min(generation,
    verification)`); every gate is code, not a prompt; human gates remain
    Intake, Plan, Validate — Chris only, on the XPS 15.

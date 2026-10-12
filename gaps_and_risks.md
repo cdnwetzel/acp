@@ -102,6 +102,26 @@ DDR4-2667 ECC RDIMM, **configured 2400 MT/s** (one notch below rated, typical
 it is not a serving tier, confirming the guardrail's premise. No further
 action.
 
+### 3.4 Asrock GPU tenancy contention — coordination validated 2026-10-11
+Evidence: rung-5 lifecycle (ledger row 149), `/tmp/acp-rung5-20261011-fixed/swap-timing.log`, Ollama scheduler log on Asrock.
+The 5060 Ti (16.3 GiB) has three tenants: the faithfulness verifier-service
+judge (qwen2.5:14b, `JUDGE_KEEP_ALIVE 30m`), ACP REVIEW (gpt-oss:20b,
+~11.9 GiB resident), and ACP VERIFY (qwen2.5:14b, ~13.1 GiB). The two ACP
+models sum to ~26.5 GiB — **co-residency is impossible**, so every full
+lifecycle requires two model swaps. Ollama will not evict a busy model: with
+the verifier-service actively judging, REVIEW's gpt-oss load queued until
+pxx's 600s budget expired (rung-5 seq 11, preserved fail-closed evidence).
+**Validated procedure (2026-10-11):** owner stops verifier-service
+(`rc-service`), unload + cold swap completes in ~11s (gpt-oss via :11435),
+reverse swap adds ~20s inside VERIFY's call; the lifecycle then runs green.
+**Limitations:** the quiet window is manual and owner-executed; no automated
+exclusion exists — a verifier-service restart mid-lifecycle re-creates the
+fail-closed timeout class. **Rejected alternatives:** verifier-judge
+relocation to T5810 vLLM (owner: T5810 model locked and in use); second GPU
+in the Asrock chassis (ruled out); smaller models (reviewer bake-off:
+gpt-oss 24/32 vs qwen2.5:14b 4/16 vs Nemotron 0/16 — smaller is measurably
+worse at defect recall).
+
 ## 4. Documentation drift (inventory table vs reality)
 
 | Item | Documented | Probed | Severity |
