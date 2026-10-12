@@ -222,7 +222,12 @@ completion lock; shared binding validator `pipeline/waiver_proof.py` (one
 implementation for runner + reconcile) requires every binding field —
 missing fields fail instead of skipping verification — verifies the
 started/failed hashes form ONE attempt, and checks the receipt's manifest
-binding against the completed CODE manifest (WAIVER_MANIFEST).
+binding against the completed CODE manifest (WAIVER_MANIFEST). Repair pass
+3 (same day): the receipt's `review_md_sha256` must equal the BOUND
+FAILURE's recorded artifact hash — not just the later completion's — and
+the failure row must carry that hash; the exact-evidence chain is failure
+bytes == receipt bytes == completion bytes, enforced on both the resume and
+reconciliation paths via the shared validator.
 
 Endpoint topology rule (owner decision 2026-10-08): the repo manifest's
 `lan`-class entries are canonical — they reflect the declared HOME-fleet
