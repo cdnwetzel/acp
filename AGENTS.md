@@ -181,7 +181,7 @@ verifier-judge relocation to T5810 REJECTED (model locked, in use); hardware
 ruled out. See gaps_and_risks.md §3.4.
 
 2026-10-11/12: **Rung 6 linked two-lifecycle remediation-loop drill complete**
-(ledger rows 152–153; `docs/rung6-remediation-loop-20261012.md`; bundles in
+(ledger rows 153–154, i.e. seq 152–153; `docs/rung6-remediation-loop-20261012.md`; bundles in
 `docs/evidence/rung6-20261011/`). Challenge lifecycle `0d85b24e8e02`: injected
 negative-range clamp defect was DETECTED and named verbatim by REVIEW
 (gpt-oss:20b) but WAIVED on test-coverage grounds; TEST blind; structured

@@ -3,7 +3,9 @@
 Status: **completed as a denied-then-remediated drill pair**. This record is
 drill evidence only; it makes no production-readiness claim.
 
-Canonical ledger rows: 152 (challenge) and 153 (recovery). Bundles:
+Canonical ledger rows: 153 (challenge) and 154 (recovery) — 1-based row
+convention, matching earlier entries; stored `seq` fields are 152 and 153.
+Bundles:
 `docs/evidence/rung6-20261011/challenge-lifecycle-0d85b24e8e02.tar.gz` and
 `recovery-lifecycle-b221b9f1b029.tar.gz` (live copies in `/tmp/acp-rung6-*`).
 
