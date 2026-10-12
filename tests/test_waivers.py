@@ -746,3 +746,85 @@ def test_reconcile_wrong_manifest_binding(tmp_path, monkeypatch):
     report = envelope.reconcile()
     assert not report["ok"]
     assert any("WAIVER_MANIFEST" in f for f in report["failures"])
+
+def test_reconcile_failure_without_artifact_hash_unbindable(tmp_path, monkeypatch):
+    """P1 (third pass): the bound failure must carry the failed bytes' hash —
+    a receipt against an unbound failure fails authority."""
+    monkeypatch.chdir(tmp_path)
+    os.makedirs("artifacts", exist_ok=True)
+    open("artifacts/review.md", "w").write("x")
+    fh = "f" * 64
+    state.emit("intake", "started", detail={"lifecycle_id": "lcrec104"})
+    state.emit("code", "complete", artifact="artifacts/diff/manifest.json",
+               detail={"artifact_sha256": "y" * 64})
+    state.emit("review", "started")
+    s1 = state.rows()[-1]["hash"]
+    state.emit("review", "gate_failed", detail={"error": "OPEN"})  # no hash
+    f1 = state.rows()[-1]["hash"]
+    state.emit("review", "owner_waiver",
+               detail=_receipt_detail("lcrec104", fh, s1, f1))
+    rh = state.rows()[-1]["hash"]
+    state.emit("review", "complete", artifact="artifacts/review.md",
+               detail={"artifact_sha256": "x" * 64, "waived_findings": [fh],
+                       "waiver_receipts": [rh]})
+    envelope.emit_run_manifest({})
+    envelope.emit_gate("review", "pass",
+                       "owner-waiver resume (F-005); waived_findings=" + fh)
+    report = envelope.reconcile()
+    assert not report["ok"]
+    assert any("failed bytes are unbound" in f for f in report["failures"])
+
+def test_reconcile_receipt_must_bind_the_failed_bytes(tmp_path, monkeypatch):
+    """P1 (third pass): receipt + completion naming review bytes DIFFERENT
+    from the bound failure's recorded hash fail — the exact-evidence chain
+    is failure bytes == receipt bytes == completion bytes."""
+    monkeypatch.chdir(tmp_path)
+    os.makedirs("artifacts", exist_ok=True)
+    open("artifacts/review.md", "w").write("x")
+    fh = "f" * 64
+    state.emit("intake", "started", detail={"lifecycle_id": "lcrec105"})
+    state.emit("code", "complete", artifact="artifacts/diff/manifest.json",
+               detail={"artifact_sha256": "y" * 64})
+    state.emit("review", "started")
+    s1 = state.rows()[-1]["hash"]
+    # the failure recorded DIFFERENT bytes than the receipt/completion claim
+    state.emit("review", "gate_failed",
+               detail={"error": "OPEN", "artifact_sha256": "z" * 64})
+    f1 = state.rows()[-1]["hash"]
+    state.emit("review", "owner_waiver",
+               detail=_receipt_detail("lcrec105", fh, s1, f1))  # "x"*64
+    rh = state.rows()[-1]["hash"]
+    state.emit("review", "complete", artifact="artifacts/review.md",
+               detail={"artifact_sha256": "x" * 64, "waived_findings": [fh],
+                       "waiver_receipts": [rh]})
+    envelope.emit_run_manifest({})
+    envelope.emit_gate("review", "pass",
+                       "owner-waiver resume (F-005); waived_findings=" + fh)
+    report = envelope.reconcile()
+    assert not report["ok"]
+    assert any("not the failed bytes" in f for f in report["failures"])
+
+def test_resume_validator_rejects_receipt_against_unbound_failure(tmp_path, monkeypatch):
+    """The same check fires on the runner's resume path (shared validator):
+    hand-edit the failure row's hash binding away and the resume refuses."""
+    _mock_lifecycle_to_review_failure(
+        tmp_path, monkeypatch, "issue: planted defect — OPEN: violates AC-9")
+    _waive_planted(tmp_path)
+    # Simulate a failure row whose artifact binding disagrees with the
+    # receipt: rewrite review.md is caught elsewhere, so instead verify the
+    # validator directly against the live window rows.
+    rows = state.lifecycle_rows()
+    win = runner._review_failed_window(rows)
+    assert win is not None
+    last_start, fail, receipts = win
+    from pipeline import waiver_proof
+    assert waiver_proof.check_receipt_bindings(
+        receipts[0], rows, state.lifecycle()["id"]) == []
+    forged_fail = dict(fail, detail={"error": "OPEN"})  # hash binding removed
+    forged = [r if r.get("hash") != fail.get("hash") else forged_fail
+              for r in rows]
+    # the forged row's stored hash no longer matches its content, so find the
+    # validator's failure against the forged window rows
+    errs = waiver_proof.check_receipt_bindings(
+        receipts[0], forged, state.lifecycle()["id"])
+    assert any("unbound" in e or "stale or foreign" in e for e in errs)

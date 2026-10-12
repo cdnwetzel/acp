@@ -65,6 +65,17 @@ def check_receipt_bindings(receipt, rows, cur_lc, completion=None):
         fails.append(f"WAIVER_AUTHORITY: receipt {rid}… attempt_started_hash "
                      f"and attempt_failed_hash do not form one attempt — the "
                      f"started row is not the attempt that failed")
+    # The receipt must bind the SAME review bytes the bound failure recorded
+    # (review P1, 2026-10-12 third pass): comparing only against the later
+    # completion let receipt+completion agree on bytes the gate never saw.
+    f_h = (f.get("detail") or {}).get("artifact_sha256")
+    if not f_h:
+        fails.append(f"WAIVER_AUTHORITY: receipt {rid}… bound failure carries "
+                     f"no review-artifact hash — the failed bytes are unbound")
+    elif f_h != d["review_md_sha256"]:
+        fails.append(f"WAIVER_AUTHORITY: receipt {rid}… binds review.md "
+                     f"{d['review_md_sha256'][:16]}… but the bound failure "
+                     f"recorded {f_h[:16]}… — not the failed bytes")
     if completion is None:
         return fails
     cd = completion.get("detail") or {}
