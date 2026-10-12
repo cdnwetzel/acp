@@ -96,7 +96,7 @@ python3 -m pipeline.approvals <gate> approve|deny "reason"
 # gates: intake | plan | validate
 ```
 
-**Current test status (2026-10-12): 345 passed, 0 failed**
+**Current test status (2026-10-12): 350 passed, 0 failed**
 (`python3 -m pytest tests/ -q`). C6 (2026-10-03) landed hash-chaining;
 the 2026-10-04 repair program added the legacy-prefix seal (row 78),
 lifecycle identity, hash-bound approvals, strict gate parsers, envelope
@@ -210,6 +210,13 @@ TEST/VERIFY failure. Failed-attempt hashes no longer block re-review
 (`_assert_artifact_unchanged` scopes to complete/gate_open/human_approve).
 Plan: `docs/f005-owner-waiver-amendment-20261012.md` (v2, `8762f50`).
 Rung-7 qualification (both waiver paths) remains SEPARATELY authorized.
+Repair pass (owner review of `626093c`, 2026-10-12): waiver completion now
+re-verifies the attempt window under the ledger lock (concurrent-rerun
+refusal); `gate_validate` compares exact finding text, not just identifiers;
+reconciliation resolves each completion's exact `waiver_receipts` row hashes
+with full binding + sequence checks (WAIVER_STALE_ATTEMPT / WAIVER_SEQUENCE
+added), and `_applied_waivers` resolves by row hash — an orphaned receipt
+cannot leak in via identical-bytes reruns.
 
 Endpoint topology rule (owner decision 2026-10-08): the repo manifest's
 `lan`-class entries are canonical — they reflect the declared HOME-fleet

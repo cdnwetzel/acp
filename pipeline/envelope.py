@@ -396,31 +396,96 @@ def reconcile(artifacts_dir="artifacts"):
                 report["failures"].append(
                     f"HUMAN_GATE_BYPASSED: gate {ph} passed and the lifecycle "
                     f"advanced, but no human_approve follows its latest gate_open")
-        # 7. F-005 waiver authority: a claimed waiver must be PROVEN against
-        #    the ledger, not recorded. Every owner_waiver receipt must bind
-        #    the current lifecycle and a real attempt window (started +
-        #    gate_failed row hashes); every waived finding in a review
-        #    completion must carry a receipt; a receipt that is neither
-        #        applied nor orphaned by a re-review is an anomaly; and
-        #    waiver gate evidence without a completion is an interruption.
+        # 7. F-005 waiver authority: reconciliation must PROVE the exact
+        #    applied receipt, not some receipt (review P1 2026-10-12).
+        #    Resolve each completion's waiver_receipts row hashes and verify
+        #    every binding (lifecycle, attempt rows, review.md bytes) and
+        #    the sequence relationships (failure < receipt < completion, no
+        #    intervening review 'started' — a rerun, even one producing
+        #    identical bytes, orphans the window). Receipts never referenced
+        #    by a completion must be orphaned or they are anomalies.
+        by_hash = {r.get("hash"): r for r in lc_rows}
         receipts = [r for r in lc_rows
                     if r.get("phase") == "review"
                     and r.get("event") == "owner_waiver"]
         completions = [r for r in lc_rows
                        if r.get("phase") == "review"
                        and r.get("event") == "complete"]
-        applied = set()
-        for c in completions:
-            applied |= set((c.get("detail") or {}).get("waived_findings") or [])
-        started_hashes = {r.get("hash") for r in lc_rows
-                          if r.get("phase") == "review"
-                          and r.get("event") == "started"}
+        started_rows = [r for r in lc_rows
+                        if r.get("phase") == "review"
+                        and r.get("event") == "started"]
+        started_hashes = {r.get("hash") for r in started_rows}
         failed_rows = {r.get("hash"): r for r in lc_rows
                        if r.get("phase") == "review"
                        and r.get("event") == "gate_failed"}
+        referenced = set()
+        for c in completions:
+            d = c.get("detail") or {}
+            waived = set(d.get("waived_findings") or [])
+            rhashes = d.get("waiver_receipts") or []
+            cid = (c.get("hash") or "?")[:16]
+            if waived and not rhashes:
+                report["failures"].append(
+                    f"WAIVER_MISSING: review completion {cid}… waives "
+                    f"{len(waived)} finding(s) but names no waiver receipts — "
+                    f"authorization unproven")
+                continue
+            if rhashes and not waived:
+                report["failures"].append(
+                    f"WAIVER_COVERAGE: review completion {cid}… names waiver "
+                    f"receipts but lists no waived findings")
+            covered = set()
+            for h in rhashes:
+                referenced.add(h)
+                r = by_hash.get(h)
+                if not r or r.get("event") != "owner_waiver":
+                    report["failures"].append(
+                        f"WAIVER_AUTHORITY: completion {cid}… names receipt "
+                        f"{str(h)[:16]}… which is not an owner_waiver row")
+                    continue
+                rd = r.get("detail") or {}
+                rid = (r.get("hash") or "?")[:16]
+                if cur_lc and rd.get("lifecycle_id") \
+                        and rd["lifecycle_id"] != cur_lc:
+                    report["failures"].append(
+                        f"WAIVER_AUTHORITY: receipt {rid}… binds lifecycle "
+                        f"{rd['lifecycle_id']} — not the current {cur_lc}")
+                if (rd.get("attempt_started_hash") not in started_hashes
+                        or rd.get("attempt_failed_hash") not in failed_rows):
+                    report["failures"].append(
+                        f"WAIVER_AUTHORITY: receipt {rid}… attempt binding "
+                        f"matches no review started/gate_failed row — stale "
+                        f"or foreign")
+                    continue
+                bf = failed_rows[rd["attempt_failed_hash"]]
+                if not (bf.get("seq", -1) < r.get("seq", -1)
+                        < c.get("seq", -1)):
+                    report["failures"].append(
+                        f"WAIVER_SEQUENCE: receipt {rid}… is not ordered "
+                        f"gate_failed < receipt < completion")
+                if any(bf.get("seq", -1) < s.get("seq", -1) < c.get("seq", -1)
+                       for s in started_rows):
+                    report["failures"].append(
+                        f"WAIVER_STALE_ATTEMPT: receipt {rid}… applied by "
+                        f"completion {cid}… after a new review attempt "
+                        f"started — the bound window was orphaned")
+                if (d.get("artifact_sha256") and rd.get("review_md_sha256")
+                        and rd["review_md_sha256"] != d["artifact_sha256"]):
+                    report["failures"].append(
+                        f"WAIVER_AUTHORITY: receipt {rid}… binds review.md "
+                        f"{rd['review_md_sha256'][:16]}… but completion {cid}… "
+                        f"completed {d['artifact_sha256'][:16]}…")
+                covered.add(rd.get("finding_sha256"))
+            if waived and covered != waived:
+                report["failures"].append(
+                    f"WAIVER_COVERAGE: completion {cid}… waived_findings do "
+                    f"not exactly match its receipts' findings")
         for r in receipts:
+            h = r.get("hash")
+            if h in referenced:
+                continue
             d = r.get("detail") or {}
-            rid = (r.get("hash") or "?")[:16]
+            rid = (h or "?")[:16]
             if cur_lc and d.get("lifecycle_id") and d["lifecycle_id"] != cur_lc:
                 report["failures"].append(
                     f"WAIVER_AUTHORITY: receipt {rid}… binds lifecycle "
@@ -428,28 +493,17 @@ def reconcile(artifacts_dir="artifacts"):
             if (d.get("attempt_started_hash") not in started_hashes
                     or d.get("attempt_failed_hash") not in failed_rows):
                 report["failures"].append(
-                    f"WAIVER_AUTHORITY: receipt {rid}… attempt binding matches "
-                    f"no review started/gate_failed row — stale or foreign")
-            fh = d.get("finding_sha256")
-            if fh in applied:
+                    f"WAIVER_AUTHORITY: receipt {rid}… attempt binding "
+                    f"matches no review started/gate_failed row — stale or "
+                    f"foreign")
                 continue
-            bound_fail = failed_rows.get(d.get("attempt_failed_hash"))
-            orphaned = bound_fail is not None and any(
-                x.get("seq", -1) > bound_fail.get("seq", -1)
-                for x in lc_rows
-                if x.get("phase") == "review" and x.get("event") == "started")
+            bf = failed_rows[d["attempt_failed_hash"]]
+            orphaned = any(s.get("seq", -1) > bf.get("seq", -1)
+                           for s in started_rows)
             if not orphaned:
                 report["failures"].append(
-                    f"WAIVER_NOT_APPLIED: receipt {rid}… is neither applied to "
-                    f"a review completion nor orphaned by a re-review")
-        for c in completions:
-            for fh in (c.get("detail") or {}).get("waived_findings") or []:
-                if not any((r.get("detail") or {}).get("finding_sha256") == fh
-                           for r in receipts):
-                    report["failures"].append(
-                        f"WAIVER_MISSING: review completion waives finding "
-                        f"{str(fh)[:16]}… with no owner_waiver receipt — "
-                        f"authorization unproven")
+                    f"WAIVER_NOT_APPLIED: receipt {rid}… is neither applied "
+                    f"to a review completion nor orphaned by a re-review")
         waiver_pass = [g for g in gates
                        if g.get("phase") == "review"
                        and g.get("gate_result") == "pass"

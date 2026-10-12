@@ -294,9 +294,11 @@ def gate_validate(v="artifacts/validation.md", waivers=None):
     """SIGN-OFF block required. F-005: the '## Owner waivers' section is
     content-checked against the verified receipt inventory supplied by the
     RUNNER (the gate never reads the ledger): every applied waiver must be
-    listed with its exact task, finding hash, receipt row hash, and reason —
-    omitted, extra, or altered entries fail. 'None' is valid only when the
-    inventory is empty."""
+    listed with its exact task, finding hash, receipt row hash, reason, AND
+    finding text — omitted, extra, or altered entries fail (review P1
+    2026-10-12: identifiers alone allowed a document to display benign text
+    beside genuine hashes). 'None' is valid only when the inventory is
+    empty."""
     txt = open(v).read() if os.path.exists(v) else ""
     if not txt.strip() or "SIGN-OFF:" not in txt:
         raise GateError("validation.md missing SIGN-OFF block")
@@ -311,14 +313,14 @@ def gate_validate(v="artifacts/validation.md", waivers=None):
             cur = {"task_id": m.group(1)}
             entries.append(cur)
             continue
-        m = re.match(r"(finding_sha256|receipt|reason): (.*\S)\s*$",
+        m = re.match(r"(finding_sha256|receipt|reason|finding): (.*\S)\s*$",
                      line.strip())
         if m and cur is not None:
             cur[m.group(1)] = m.group(2)
     inventory = {(w["task_id"], w["finding_sha256"], w["receipt_hash"],
-                  w["reason"]) for w in (waivers or [])}
+                  w["reason"], w["finding_text"]) for w in (waivers or [])}
     documented = {(e.get("task_id"), e.get("finding_sha256"),
-                   e.get("receipt"), e.get("reason"))
+                   e.get("receipt"), e.get("reason"), e.get("finding"))
                   for e in entries}
     has_none = any(l.strip() == "- None" for l in section.splitlines())
     if not inventory:

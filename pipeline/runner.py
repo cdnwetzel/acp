@@ -131,35 +131,53 @@ def _waiver_resume(rows):
             "complete the waivers or start a linked recovery")
     gates.gate_review(waivers=[r["detail"] for r in receipts])
     waived = sorted(covered)
+    receipt_hashes = sorted(r.get("hash") for r in receipts)
     envelope.emit_gate("review", "pass",
                        detail="owner-waiver resume (F-005); "
                               "waived_findings=" + ",".join(waived))
-    state.emit("review", "complete", artifact="artifacts/review.md",
-               detail={**(_hash_detail("artifacts/review.md") or {}),
-                       "waived_findings": waived,
-                       "waiver_receipts": sorted(r.get("hash")
-                                                 for r in receipts)})
+    def verify_window(fresh):
+        # P1 (review 2026-10-12): the completion lands only if the attempt
+        # that earned the receipts is STILL the open failure window under
+        # the lock — a concurrent rerun (a new review 'started' row) or any
+        # receipt-set change since the pre-check refuses the completion.
+        w2 = _review_failed_window(fresh)
+        if (not w2
+                or w2[0].get("hash") != last_start.get("hash")
+                or w2[1].get("hash") != fail.get("hash")):
+            raise gates.GateError(
+                "review attempt changed during waiver resume — a concurrent "
+                "rerun supersedes the window; refusing to complete")
+        if sorted(r.get("hash") for r in w2[2]) != receipt_hashes:
+            raise gates.GateError(
+                "waiver receipt set changed during resume — refusing to "
+                "complete on shifted evidence")
+        if _sha256_file("artifacts/review.md") != review_h:
+            raise gates.GateError("review.md changed during waiver resume — "
+                                  "refusing to complete on drifted evidence")
+    state.transact("review", "complete", artifact="artifacts/review.md",
+                   verify=verify_window,
+                   detail={**(_hash_detail("artifacts/review.md") or {}),
+                           "waived_findings": waived,
+                           "waiver_receipts": receipt_hashes})
     return True
 
 def _applied_waivers(rows):
-    """Owner-waiver receipts APPLIED to the current lifecycle's review
-    completion (F-005): finding listed in the completion's waived_findings
-    and bound to the completed review.md bytes. This verified inventory is
-    what the validate gate content-checks against."""
+    """Owner-waiver receipts APPLIED to the current lifecycle's latest review
+    completion (F-005), resolved by the completion's EXACT waiver_receipts
+    row hashes — never by finding/artifact similarity, which could admit an
+    orphaned receipt when a rerun produces identical bytes (review P1,
+    2026-10-12). This verified inventory is what the validate gate
+    content-checks against."""
     comp = [r for r in rows if r["phase"] == "review" and r["event"] == "complete"]
-    waived, art_hash = set(), None
-    for r in comp:
-        d = r.get("detail") or {}
-        waived |= set(d.get("waived_findings") or [])
-        if d.get("artifact_sha256"):
-            art_hash = d["artifact_sha256"]
+    if not comp:
+        return []
+    d = comp[-1].get("detail") or {}
+    by_hash = {r.get("hash"): r for r in rows}
     out = []
-    for r in rows:
-        if r.get("phase") == "review" and r.get("event") == "owner_waiver":
-            d = r.get("detail") or {}
-            if (d.get("finding_sha256") in waived
-                    and d.get("review_md_sha256") == art_hash):
-                out.append({**d, "receipt_hash": r.get("hash")})
+    for h in d.get("waiver_receipts") or []:
+        r = by_hash.get(h)
+        if r and r.get("event") == "owner_waiver":
+            out.append({**(r.get("detail") or {}), "receipt_hash": h})
     return out
 
 GATE = {

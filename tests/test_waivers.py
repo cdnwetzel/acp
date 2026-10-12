@@ -254,6 +254,12 @@ def test_waiver_resume_completes_review_without_recaller(tmp_path, monkeypatch):
                         "waive", "TASK-3", "1", "accepted for drill"],
                        capture_output=True, text=True, env=_env(), cwd=tmp_path)
     assert r.returncode == 0, r.stderr
+    # Reviewer invocation is explicitly FORBIDDEN on the waiver path — any
+    # call raises, so a passing resume proves no recall happened.
+    import pipeline.phases.review as review_mod
+    def _boom(**kw):
+        raise AssertionError("reviewer invoked during waiver resume")
+    monkeypatch.setattr(review_mod, "run", _boom)
     started_before = [e for e in state.rows() if e["phase"] == "review"
                       and e["event"] == "started"]
     assert runner.run_all() == "gate_open:validate"
@@ -263,12 +269,39 @@ def test_waiver_resume_completes_review_without_recaller(tmp_path, monkeypatch):
     comp = [e for e in state.rows() if e["phase"] == "review"
             and e["event"] == "complete"]
     assert comp and comp[-1]["detail"]["waived_findings"]
+    assert comp[-1]["detail"]["waiver_receipts"]
     vtxt = open("artifacts/validation.md").read()
     assert "## Owner waivers" in vtxt
     assert comp[-1]["detail"]["waived_findings"][0] in vtxt
     assert "planted defect" in vtxt  # the deviation is visible at VALIDATE
     report = envelope.reconcile()
     assert report["ok"], report["failures"]
+
+def test_waiver_completion_refuses_concurrent_rerun(tmp_path, monkeypatch):
+    """P1 (2026-10-12): a competing REVIEW rerun intervening between the
+    waiver gate evidence and the completion must refuse the completion —
+    the transact verify re-checks the attempt window under the lock."""
+    _mock_lifecycle_to_review_failure(
+        tmp_path, monkeypatch, "issue: planted defect — OPEN: violates AC-9")
+    r = subprocess.run([sys.executable, "-m", "pipeline.approvals", "review",
+                        "waive", "TASK-3", "1", "accepted"],
+                       capture_output=True, text=True, env=_env(), cwd=tmp_path)
+    assert r.returncode == 0, r.stderr
+    real_emit_gate = envelope.emit_gate
+    def interleaved(phase, result, detail=""):
+        real_emit_gate(phase, result, detail)
+        if phase == "review" and result == "pass":
+            state.emit("review", "started")  # the concurrent rerun lands here
+    monkeypatch.setattr(envelope, "emit_gate", interleaved)
+    with pytest.raises(gates.GateError, match="concurrent rerun"):
+        runner.run_all()
+    assert not [e for e in state.rows()
+                if e["phase"] == "review" and e["event"] == "complete"]
+    # …and the emitted gate evidence without a completion is visible to
+    # reconciliation as an interruption.
+    report = envelope.reconcile()
+    assert not report["ok"]
+    assert any("WAIVER_INCOMPLETE" in f for f in report["failures"])
 
 def test_waiver_resume_requires_exact_coverage(tmp_path, monkeypatch):
     """Two OPEN findings, one waived → loud refusal, no silent partial pass."""
@@ -339,8 +372,9 @@ def _validation_doc(entries=None):
             lines += [f"- task: {e['task_id']}",
                       f"  finding_sha256: {e['finding_sha256']}",
                       f"  receipt: {e['receipt_hash']}",
-                      f"  reason: {e['reason']}",
-                      f"  finding: {e.get('finding_text', 'issue: x — OPEN: y')}"]
+                      f"  reason: {e['reason']}"]
+            if e.get("finding_text") is not None:
+                lines.append(f"  finding: {e['finding_text']}")
     lines += ["", "SIGN-OFF: pending\n"]
     return "\n".join(lines)
 
@@ -377,6 +411,18 @@ def test_validate_waivers_content_checked(tmp_path, monkeypatch):
     # altered reason
     open("artifacts/validation.md", "w").write(
         _validation_doc([dict(W1, reason="altered")]))
+    with pytest.raises(gates.GateError):
+        gates.gate_validate(waivers=[W1])
+    # altered finding text (review P1 2026-10-12: benign text beside genuine
+    # hashes previously passed the gate)
+    open("artifacts/validation.md", "w").write(
+        _validation_doc([dict(W1, finding_text="issue: harmless cosmetic "
+                                               "issue — OPEN: trivial")]))
+    with pytest.raises(gates.GateError):
+        gates.gate_validate(waivers=[W1])
+    # missing finding line
+    open("artifacts/validation.md", "w").write(
+        _validation_doc([dict(W1, finding_text=None)]))
     with pytest.raises(gates.GateError):
         gates.gate_validate(waivers=[W1])
 
@@ -450,3 +496,108 @@ def test_reconcile_waiver_interruption(tmp_path, monkeypatch):
     report = envelope.reconcile()
     assert not report["ok"]
     assert any("WAIVER_INCOMPLETE" in f for f in report["failures"])
+
+def _receipt_detail(lc, fh, s_hash, f_hash, review_h="x" * 64):
+    return {"lifecycle_id": lc, "task_id": "TASK-2", "finding_index": 1,
+            "finding_sha256": fh, "finding_text": "issue: x — OPEN: y",
+            "reason": "accepted", "review_md_sha256": review_h,
+            "diff_manifest_sha256": "y" * 64,
+            "attempt_started_hash": s_hash, "attempt_failed_hash": f_hash}
+
+def test_reconcile_stale_attempt_applied(tmp_path, monkeypatch):
+    """P1: a receipt from attempt 1 applied by a completion AFTER a rerun
+    started is a stale-window application — even if bytes are identical."""
+    monkeypatch.chdir(tmp_path)
+    os.makedirs("artifacts", exist_ok=True)
+    fh = "f" * 64
+    state.emit("intake", "started", detail={"lifecycle_id": "lcrec005"})
+    state.emit("review", "started")
+    s1 = state.rows()[-1]["hash"]
+    state.emit("review", "gate_failed",
+               detail={"error": "OPEN", "artifact_sha256": "x" * 64})
+    f1 = state.rows()[-1]["hash"]
+    state.emit("review", "owner_waiver",
+               detail=_receipt_detail("lcrec005", fh, s1, f1))
+    receipt_h = state.rows()[-1]["hash"]
+    state.emit("review", "started")  # the rerun orphans attempt 1's window
+    state.emit("review", "complete", artifact="artifacts/review.md",
+               detail={"artifact_sha256": "x" * 64,  # identical bytes
+                       "waived_findings": [fh],
+                       "waiver_receipts": [receipt_h]})
+    envelope.emit_run_manifest({})
+    envelope.emit_gate("review", "pass",
+                       "owner-waiver resume (F-005); waived_findings=" + fh)
+    report = envelope.reconcile()
+    assert not report["ok"]
+    assert any("WAIVER_STALE_ATTEMPT" in f for f in report["failures"])
+
+def test_reconcile_completion_naming_non_receipt(tmp_path, monkeypatch):
+    """A completion whose waiver_receipts point at a non-receipt row fails."""
+    monkeypatch.chdir(tmp_path)
+    os.makedirs("artifacts", exist_ok=True)
+    fh = "f" * 64
+    state.emit("intake", "started", detail={"lifecycle_id": "lcrec006"})
+    state.emit("review", "started")
+    state.emit("review", "gate_failed",
+               detail={"error": "OPEN", "artifact_sha256": "x" * 64})
+    not_a_receipt = state.rows()[-1]["hash"]  # the gate_failed row itself
+    state.emit("review", "complete", artifact="artifacts/review.md",
+               detail={"artifact_sha256": "x" * 64, "waived_findings": [fh],
+                       "waiver_receipts": [not_a_receipt]})
+    envelope.emit_run_manifest({})
+    envelope.emit_gate("review", "pass",
+                       "owner-waiver resume (F-005); waived_findings=" + fh)
+    report = envelope.reconcile()
+    assert not report["ok"]
+    assert any("WAIVER_AUTHORITY" in f and "not an owner_waiver row" in f
+               for f in report["failures"])
+
+def test_reconcile_coverage_mismatch(tmp_path, monkeypatch):
+    """Receipts resolve and verify, but their findings do not exactly match
+    the completion's waived_findings."""
+    monkeypatch.chdir(tmp_path)
+    os.makedirs("artifacts", exist_ok=True)
+    state.emit("intake", "started", detail={"lifecycle_id": "lcrec007"})
+    state.emit("review", "started")
+    s1 = state.rows()[-1]["hash"]
+    state.emit("review", "gate_failed",
+               detail={"error": "OPEN", "artifact_sha256": "x" * 64})
+    f1 = state.rows()[-1]["hash"]
+    state.emit("review", "owner_waiver",
+               detail=_receipt_detail("lcrec007", "a" * 64, s1, f1))
+    receipt_h = state.rows()[-1]["hash"]
+    state.emit("review", "complete", artifact="artifacts/review.md",
+               detail={"artifact_sha256": "x" * 64,
+                       "waived_findings": ["b" * 64],  # different finding
+                       "waiver_receipts": [receipt_h]})
+    envelope.emit_run_manifest({})
+    envelope.emit_gate("review", "pass",
+                       "owner-waiver resume (F-005); waived_findings=" + "b" * 64)
+    report = envelope.reconcile()
+    assert not report["ok"]
+    assert any("WAIVER_COVERAGE" in f for f in report["failures"])
+
+def test_applied_waivers_resolve_exact_receipt_rows(tmp_path, monkeypatch):
+    """P1: with two attempts producing IDENTICAL bytes, the inventory must
+    come from the completion's waiver_receipts row hashes — the orphaned
+    attempt-1 receipt must not leak in."""
+    monkeypatch.chdir(tmp_path)
+    fh = "f" * 64
+    state.emit("intake", "started", detail={"lifecycle_id": "lcrec008"})
+    for attempt in (1, 2):
+        state.emit("review", "started")
+        s = state.rows()[-1]["hash"]
+        state.emit("review", "gate_failed",
+                   detail={"error": "OPEN", "artifact_sha256": "x" * 64})
+        f = state.rows()[-1]["hash"]
+        state.emit("review", "owner_waiver",
+                   detail=_receipt_detail("lcrec008", fh, s, f))
+        if attempt == 2:
+            receipt2 = state.rows()[-1]["hash"]
+    state.emit("review", "complete", artifact="artifacts/review.md",
+               detail={"artifact_sha256": "x" * 64, "waived_findings": [fh],
+                       "waiver_receipts": [receipt2]})
+    applied = runner._applied_waivers(state.lifecycle_rows())
+    assert len(applied) == 1
+    assert applied[0]["receipt_hash"] == receipt2
+    assert applied[0]["attempt_started_hash"] != receipt2  # sanity: attempt 2
