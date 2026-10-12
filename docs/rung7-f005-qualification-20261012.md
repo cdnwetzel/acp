@@ -1,16 +1,15 @@
 # Rung 7 — F-005 live qualification: OPEN → halt → linked recovery; owner waiver → VERIFY boundary (2026-10-12)
 
-Status: **completed drill pair, plus completed waiver-advance path (b)**.
-Qualifies the F-005 owner-waiver contract's OPEN→halt→recovery path and
-receipt-bound waiver resume with the VERIFY boundary. **Outstanding:
-VALIDATE visibility of waivers is NOT qualified** (path (b) never reached
-VALIDATE) and the **TEST boundary (c1) is NOT qualified** (staged, awaiting
-the owner's intake decision). This record is drill evidence; no
-production-readiness claim.
+Status: **completed drill pair, waiver-advance path (b), and TEST-boundary
+path (c1)**. Qualifies the F-005 owner-waiver contract's OPEN→halt→recovery
+path, receipt-bound waiver resume, and both later-gate boundaries (VERIFY,
+TEST). **Outstanding: VALIDATE visibility of waivers is NOT qualified**
+(replacement design pending owner authorization). This record is drill
+evidence; no production-readiness claim.
 
 Canonical ledger: seq 154 (challenge), seq 155 (recovery), seq 156 (path b
-waiver → VERIFY halt).
-Bundles: `docs/evidence/rung7-20261012/` (four tarballs; live copies in
+waiver → VERIFY halt), seq 157 (path c1 TEST boundary).
+Bundles: `docs/evidence/rung7-20261012/` (five tarballs; live copies in
 `/tmp/acp-rung7-20261012*`).
 
 ## Lifecycle 0 — denied intake (`/tmp/acp-rung7-20261012`, seq 3 terminal)
@@ -120,24 +119,57 @@ verifier-service restored by the owner after the segment; health confirmed
 on-box (service started, qwen2.5 resident 11.9GB, bounded generation probe
 answered).
 
+## Lifecycle 3 — path (c1): TEST boundary (`1a8983f44daa`, halted `test gate_failed` seq 18)
+
+Sandbox `/tmp/acp-rung7-20261012-c1-test-boundary`, canonical F-005 pipeline
+plus the two-mode injection hook and supersession-aware validator
+(bundle SCAFFOLD.md has every hash). Owner decisions: intake approved
+(`4bf9b7fc…`), plan approved (`a81fe8ac…`), waiver at the REVIEW halt.
+
+- CODE complete (manifest `da6166bc…`), then `drill_inject` seq 13 with
+  `hook_mode: ACP_DRILL_INJECT_VISIBLE`: unconditional
+  `if True: return c * 9 / 5 + 33` forge (commit `c53ee7ab…`, supersedes
+  `da6166bc…`). The inverted proof held — the seeded suite FAILED
+  post-injection, as the mode requires before ledgering.
+- REVIEW (gpt-oss:20b) returned OPEN on TASK-1 ("c_to_f returns incorrect
+  value (uses +33 instead of +32)", finding `18c99daf…`); gate failed
+  closed at seq 14.
+- Owner waiver seq 15 (receipt `3a374b5a…`): drill-only, defect real and
+  unresolved, explicitly not waiving TEST/VERIFY.
+- Resume: `review complete` seq 16 with `waived_findings`/`waiver_receipts`,
+  **zero reviewer recall** (sole `review started` row: seq 12).
+- TEST seq 17–18: `test_c_to_f` FAILED, EXIT_CODE 1; canonical `gate_test`
+  refused. **The valid, fully-bound waiver was powerless against a real
+  TEST failure.** VALIDATE never opened; no `done`.
+- Reconcile: waiver-authority checks all green under the sandbox validator;
+  the single failure is `MISSING_RECORD: verify` — the expected
+  halted-lifecycle artifact (declared-real phase never reached), not a
+  defect. Chain valid (19 rows, head `465fc76b…`).
+
+One preserved staging mishap: seq 1 `worker_failed` (missing sandbox-root
+`contracts/` on the first staging run; fixed byte-identical to canonical;
+intake completed on the second attempt).
+
+Canonical ledger: seq 157.
+
 ## What this qualifies — and what remains
 
 Qualified: under F-005, a real criterion violation produces OPEN, the gate
 halts fail-closed, and the linked recovery (finding → immutable operator
 test → scoped fix → TEST containment → verified → human approval) closes
 end-to-end on live workers. Also qualified (sandbox-assisted): receipt-bound
-owner-waiver resume with no reviewer recall, and the VERIFY boundary — a
-waiver does not override a VERIFY FAIL (real model judgment).
+owner-waiver resume with no reviewer recall, the VERIFY boundary — a
+waiver does not override a VERIFY FAIL (real model judgment) — and the
+TEST boundary — a waiver does not override a real TEST failure.
 
-Not qualified (separate authorization each):
+Not qualified:
 
 - **VALIDATE visibility of a waiver** — a waived finding must reach
   `gate_open:validate` with validation.md's `## Owner waivers` section
-  content-checked against the receipt inventory. Requires a drill whose
-  waived finding TEST and VERIFY both legitimately pass.
-- **Path (c1): TEST boundary** — a waiver must never override a TEST
-  failure. Sandbox staged at `gate_open:intake`
-  (`/tmp/acp-rung7-20261012-c1-test-boundary`, intake `4bf9b7fc…`), awaiting
-  the owner's intake decision.
+  content-checked against the receipt inventory. Replacement design
+  `docs/rung7-c2-validate-visibility-design-20261012.md` (v2, deterministic
+  controlled REVIEW) is pending owner authorization; the claim will be
+  limited to deterministic waiver propagation and VALIDATE content
+  checking, not live-model acceptance.
 - **Path (c2): VERIFY boundary** — as originally designed, superseded:
   path (b) already demonstrated the property with a real verifier judgment.
