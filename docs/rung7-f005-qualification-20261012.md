@@ -1,13 +1,16 @@
-# Rung 7 — F-005 live qualification: OPEN → halt → linked recovery (2026-10-12)
+# Rung 7 — F-005 live qualification: OPEN → halt → linked recovery; owner waiver → VERIFY boundary (2026-10-12)
 
-Status: **completed drill pair** (plus one denied intake, preserved).
-Qualifies the F-005 owner-waiver contract's OPEN→halt→recovery path only.
-**Outstanding: the owner-waiver path (b) and the later-gate boundary variant
-(c) are NOT qualified** — both remain separately authorized future drills.
-This record is drill evidence; no production-readiness claim.
+Status: **completed drill pair, plus completed waiver-advance path (b)**.
+Qualifies the F-005 owner-waiver contract's OPEN→halt→recovery path and
+receipt-bound waiver resume with the VERIFY boundary. **Outstanding:
+VALIDATE visibility of waivers is NOT qualified** (path (b) never reached
+VALIDATE) and the **TEST boundary (c1) is NOT qualified** (staged, awaiting
+the owner's intake decision). This record is drill evidence; no
+production-readiness claim.
 
-Canonical ledger: seq 154 (challenge), seq 155 (recovery).
-Bundles: `docs/evidence/rung7-20261012/` (three tarballs; live copies in
+Canonical ledger: seq 154 (challenge), seq 155 (recovery), seq 156 (path b
+waiver → VERIFY halt).
+Bundles: `docs/evidence/rung7-20261012/` (four tarballs; live copies in
 `/tmp/acp-rung7-20261012*`).
 
 ## Lifecycle 0 — denied intake (`/tmp/acp-rung7-20261012`, seq 3 terminal)
@@ -74,17 +77,67 @@ patched to the supervised `127.0.0.1:11435` forward (operator off home LAN);
 canonical `endpoints.json` untouched, original preserved in the bundle,
 both model identities verified through the route.
 
+## Lifecycle 1 continued — path (b): owner waiver → advance → VERIFY halt (seq 13–18)
+
+Owner waiver recorded 2026-10-12: seq 13 `owner_waiver`, receipt row
+`5cb6532c…`, drill-only exception for the bound TASK-1 OPEN finding
+(`cc9ff581…`); reason explicitly does not waive TEST/VERIFY, authorize
+production use, or pre-decide VALIDATE. Quiet window opened on Asrock;
+resume ran WITHOUT the injection hook and with no reviewer recall.
+
+- seq 14 `review complete`: carries `waived_findings: [cc9ff581…]` and
+  `waiver_receipts: [5cb6532c…]`. **Zero reviewer recall** — the only
+  `review started` row in the lifecycle is seq 10.
+- seq 15–16 TEST: 2 passed, EXIT_CODE 0 (defect test-invisible, as seeded).
+- seq 17–18 VERIFY (`qwen2.5:14b-instruct-q4_k_m` via the supervised
+  `:11435` forward, sandbox endpoint override as authorized): the verifier
+  read review.md and judged **AC-1 FAIL** — a real model judgment, not a
+  drill trigger. Canonical `gate_verify` failed closed
+  (`criterion traced to FAIL: AC-1…`). VALIDATE never opened; no `done`.
+- Reconcile: ok, **0 failures**, 19 records, sidecar chain verified —
+  including waiver-authority check 7 under the supersession-aware sandbox
+  validator. Chain valid (19 rows, head = seq 18).
+
+**Sandbox modifications (documented, hashed in the bundle's SCAFFOLD.md):**
+supersession-aware `waiver_proof.py` override (`5469082d…`; canonical-orig
+preserved; receipt manifest binding valid iff it equals the CODE completion
+hash OR a `drill_inject` row's `artifact_sha256` chained via
+`supersedes_sha256`); verify endpoint → `127.0.0.1:11435` forward (operator
+off home LAN; canonical-orig preserved). Preflight: canonical validator
+fired WAIVER_MANIFEST on the legitimate drill receipt; the override
+accepted it; bogus-manifest and foreign-chain injects still failed;
+canonical suite 359 passed against the sandbox copy. Canonical repo
+untouched.
+
+**Boundary result:** a REVIEW waiver did NOT override a VERIFY FAIL —
+demonstrated by a real verifier judgment, which is stronger evidence than
+path (c2)'s planned controlled trigger. **VALIDATE visibility of waivers
+remains unqualified**: the gate never opened, so no validation.md
+content-check was exercised. That property needs a waived finding that
+TEST and VERIFY both legitimately pass.
+
+verifier-service restored by the owner after the segment; health confirmed
+on-box (service started, qwen2.5 resident 11.9GB, bounded generation probe
+answered).
+
 ## What this qualifies — and what remains
 
 Qualified: under F-005, a real criterion violation produces OPEN, the gate
 halts fail-closed, and the linked recovery (finding → immutable operator
 test → scoped fix → TEST containment → verified → human approval) closes
-end-to-end on live workers.
+end-to-end on live workers. Also qualified (sandbox-assisted): receipt-bound
+owner-waiver resume with no reviewer recall, and the VERIFY boundary — a
+waiver does not override a VERIFY FAIL (real model judgment).
 
 Not qualified (separate authorization each):
 
-- **Path (b): owner waiver** — OPEN → `review waive` receipt → resume with
-  no reviewer recall → deviation visible at VALIDATE. The halted challenge
-  lifecycle (`2957db4c96f9`, seq 12) remains staged for exactly this.
-- **Path (c): later-gate boundary** — a waiver must never override a TEST
-  failure or VERIFY FAIL.
+- **VALIDATE visibility of a waiver** — a waived finding must reach
+  `gate_open:validate` with validation.md's `## Owner waivers` section
+  content-checked against the receipt inventory. Requires a drill whose
+  waived finding TEST and VERIFY both legitimately pass.
+- **Path (c1): TEST boundary** — a waiver must never override a TEST
+  failure. Sandbox staged at `gate_open:intake`
+  (`/tmp/acp-rung7-20261012-c1-test-boundary`, intake `4bf9b7fc…`), awaiting
+  the owner's intake decision.
+- **Path (c2): VERIFY boundary** — as originally designed, superseded:
+  path (b) already demonstrated the property with a real verifier judgment.
