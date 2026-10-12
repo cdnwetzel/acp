@@ -209,7 +209,17 @@ WAIVER_NOT_APPLIED / WAIVER_INCOMPLETE). A waiver never overrides a later
 TEST/VERIFY failure. Failed-attempt hashes no longer block re-review
 (`_assert_artifact_unchanged` scopes to complete/gate_open/human_approve).
 Plan: `docs/f005-owner-waiver-amendment-20261012.md` (v2, `8762f50`).
-Rung-7 qualification (both waiver paths) remains SEPARATELY authorized.
+**Rung-7 live qualification (same day, ledger seq 154–155,
+`docs/rung7-f005-qualification-20261012.md`):** challenge lifecycle
+`2957db4c96f9` — REVIEW returned OPEN citing the general-behavior criterion
+verbatim and halted fail-closed at seq 12 (no WAIVED escape); recovery
+lifecycle `b73b9b19ba53` — surgical fix, TEST containment, structured
+VERIFY PASS, VALIDATE approved, `done` at seq 20, reconcile clean. One
+intake was DENIED first (general requirement must live in the criterion
+REVIEW sees) and is preserved. Drill-only VERIFY override: sandbox patched
+to the :11435 forward (operator off-LAN); canonical manifest untouched.
+**Still outstanding: waiver path (b) and later-gate boundary (c) — the
+halted challenge lifecycle stays staged for (b).**
 Repair pass (owner review of `626093c`, 2026-10-12): waiver completion now
 re-verifies the attempt window under the ledger lock (concurrent-rerun
 refusal); `gate_validate` compares exact finding text, not just identifiers;
