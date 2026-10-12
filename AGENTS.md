@@ -628,6 +628,9 @@ mechanism and backups held outside Git, not from repository history.
   and move on. NEVER invent state.
 - Human approvals are irreversible ledger events; deny/approve requires a
   non-empty reason string.
+- Ledger references: `seq` (the stored 0-based field) is the primary event
+  identifier; cite the row hash for precise binding. Add 1-based row
+  numbers only when needed (owner ruling 2026-10-12).
 - Every failure: full error, exact command, exact stderr. No silent retries.
 - Deliverables, in order, each approved by Chris before the next:
   1. `inventory_verified.md` - probed facts only, with the exact command that
