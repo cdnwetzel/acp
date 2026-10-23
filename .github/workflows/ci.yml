@@ -60,6 +60,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"
-      - run: pip install pytest
-      # stdlib only; the suite reads endpoints.example.json, never a real manifest
+      # ACP is stdlib-only, but it drives pxx: the fail-closed integration tests
+      # run a real pxx against a dead loopback endpoint (no network needed).
+      - run: pip install pytest "pxx-orchestrator>=2.9.3"
+      # the suite reads endpoints.example.json, never a real manifest
       - run: python -m pytest tests/ -q
