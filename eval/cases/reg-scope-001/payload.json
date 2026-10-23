@@ -1,0 +1,9 @@
+{
+  "changed": [
+    "ops.py",
+    "test.log"
+  ],
+  "scope": [
+    "ops.py"
+  ]
+}

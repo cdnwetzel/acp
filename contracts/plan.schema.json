@@ -1,0 +1,38 @@
+{
+  "type": "object",
+  "required": ["tasks", "required_imports"],
+  "properties": {
+    "tasks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "criterion", "deps", "scope"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^TASK-[0-9]+$" },
+          "criterion": { "type": "string", "minLength": 1 },
+          "deps": {
+            "type": "array",
+            "items": { "type": "string", "pattern": "^TASK-[0-9]+$" }
+          },
+          "scope": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "required_imports": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["symbol", "from"],
+        "properties": {
+          "symbol": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+          "from": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.]*$" }
+        }
+      }
+    }
+  }
+}

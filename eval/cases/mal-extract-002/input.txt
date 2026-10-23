@@ -1,0 +1,3 @@
+{"problem": "upgrade calc", "constraints": ["stdlib"], "acceptance_criteria": ["AC-1: x"], "required_imports": []}
+and also, wait, let me reconsider:
+{"problem": "actually different", "constraints": [], "acceptance_criteria": ["AC-1: y"], "required_imports": []}

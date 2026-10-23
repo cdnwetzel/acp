@@ -1,0 +1,15 @@
+__pycache__/
+.DS_Store
+state.jsonl
+receipts/
+eval/results/
+eval/baselines/
+
+# Operator-local endpoint manifest: real hosts, never tracked (see endpoints.example.json).
+/endpoints.json
+
+# Kept in the private archive, never in this public repository.
+/docs/evidence/*
+!/docs/evidence/README.md
+/inventory_verified.md
+/gaps_and_risks.md

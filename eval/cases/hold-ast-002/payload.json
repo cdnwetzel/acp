@@ -1,0 +1,9 @@
+{
+  "repo": "eval/cases/hold-ast-002/repo",
+  "required_imports": [
+    {
+      "symbol": "record_event",
+      "from": "metrics.store"
+    }
+  ]
+}

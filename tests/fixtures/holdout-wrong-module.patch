@@ -1,0 +1,9 @@
+diff --git a/test_textutil.py b/test_textutil.py
+index 1111111..2222222 100644
+--- a/test_textutil.py
++++ b/test_textutil.py
+@@ -0,0 +1,4 @@
++from upper import shout, split_words
++
++def test_shout():
++    assert shout("hi") == "HI"

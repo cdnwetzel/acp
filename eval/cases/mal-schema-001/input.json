@@ -1,0 +1,2 @@
+{"problem": "upgrade the calc package", "constraints": ["stdlib only"],
+ "acceptance_criteria": ["AC-1: divide(6, 2) returns 3 — test.log shows test_divide passing (ops.py)"]}

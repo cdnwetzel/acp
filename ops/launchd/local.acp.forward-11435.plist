@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- ACP governed-endpoint forward: MacBook -> Asrock Ollama :11434
+       (REVIEW worker gpt-oss:20b, owner-adopted 2026-10-08).
+       Supervision is OPERATOR INFRASTRUCTURE, outside the runner: the
+       pipeline still never starts the forward itself (check_access fails
+       closed when it is down). launchd merely keeps the operator-sanctioned
+       forward alive across drops. Runs in the user domain (requires the
+       owner logged in). TEMPLATE: replace __HOME__, the user and the
+       documentation address with the deployment's own values. -->
+  <key>Label</key>
+  <string>local.acp.forward-11435</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/ssh</string>
+    <string>-N</string>
+    <string>-L</string>
+    <string>11435:127.0.0.1:11434</string>
+    <string>-o</string>
+    <string>ServerAliveInterval=15</string>
+    <string>-o</string>
+    <string>ServerAliveCountMax=3</string>
+    <string>-o</string>
+    <string>BatchMode=yes</string>
+    <string>-o</string>
+    <string>ExitOnForwardFailure=yes</string>
+    <string>-o</string>
+    <string>ControlMaster=no</string>
+    <string>-o</string>
+    <string>ControlPath=none</string>
+    <string>operator@192.0.2.115</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/acp-forward-11435.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/acp-forward-11435.log</string>
+</dict>
+</plist>

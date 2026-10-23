@@ -1,0 +1,26 @@
+pxx-audit-real.jsonl + pxx-audit-real.head — REAL pxx audit stream (F-004)
+
+Captured 2026-10-11 in an isolated state home (XDG_STATE_HOME pointed at the
+capture dir), so the hash chain is drill-only from genesis (prev_hash = 0*64)
+and the .head anchor validates the full stream by construction.
+
+Producing artifact: pxx-orchestrator 2.7.0 INSTALLED FROM PYPI (the released
+wheel, /tmp/pxx270-verify venv — not a local build), against
+qwen2.5:14b-instruct-q4_k_m via Ollama on Asrock (192.0.2.115:11434).
+
+Two sessions, one chain (12 records, .head count=12):
+- Session A "0fe6f40854f2": bare ask + --response-format (structured output).
+  Carries the pxx >= 2.7.0 stamps: response_format_present=true,
+  response_format_sha256=44f04513548b..., json_schema_name=f004_capture_v1,
+  payload_mode=bare, system_message_present=false, tools_key_present=false.
+- Session B "3038052bd905": default (agentic) ask. Contrast record:
+  payload_mode=default, system_message_present=true, tool_count=9,
+  response_format_present=false.
+
+Prompts were authored for capture (innocuous, no secrets); record data
+contains only /tmp paths, session ids, token counts, and payload metadata —
+pxx audit is metadata-only by design (pxx AGENTS.md rule 3).
+
+Capture dir of record: /tmp/acp-f004-capture-20261011/ (ephemeral /tmp —
+this fixture pair is the durable evidence). ACP ledger: F-004 closure row
+references this fixture's sha256.

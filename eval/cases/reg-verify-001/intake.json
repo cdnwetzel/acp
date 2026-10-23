@@ -1,0 +1,3 @@
+{"problem": "add divide to calc", "constraints": ["stdlib only"],
+ "acceptance_criteria": ["AC-1: divide(6, 2) returns 3 — test.log shows test_divide passing (ops.py)"],
+ "required_imports": [{"symbol": "divide", "from": "ops"}]}

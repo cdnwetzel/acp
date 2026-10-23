@@ -1,0 +1,9 @@
+{
+  "repo": "eval/cases/reg-ast-004/repo",
+  "required_imports": [
+    {
+      "symbol": "divide",
+      "from": "ops"
+    }
+  ]
+}
