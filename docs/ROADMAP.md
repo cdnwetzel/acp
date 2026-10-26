@@ -25,10 +25,9 @@ still need an owner ruling plus a ledger row, and ACP's own agents implement the
   payload was scrubbed and its record's `fixture_sha256` updated to match; the
   fleet inventory, risk register and evidence bundles stay private. CI now runs
   the suite and a privacy gate. Test status unchanged: 359 passed.
-  **Ledger row to append on the canonical ledger** (ACP's agents):
-  `owner_ruling: public republish from scrubbed tree; endpoints.json operator-local
-  (endpoints.example.json shipped); private-only: inventory, risk register,
-  evidence bundles (hashes in docs/evidence/README.md)`.
+  Recorded on the canonical ledger 2026-10-26: ledger row 160 (seq 159),
+  `owner_decision` item `public-republish-20261023`; chain verified before
+  and after the append.
 
 ## Cross-repo alignment
 
